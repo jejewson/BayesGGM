@@ -1,0 +1,4036 @@
+---
+title: "GGM MCMC Mixing"
+author: "Deborah Sulem, Jack Jewson and David Rossell"
+date: "28 July 2025"
+output: html_document
+---
+
+# $n and $p$
+
+```{r setting, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+p <- 10
+#p <- 50
+#p <- 100
+
+#n <- p
+n <- 2*p
+#n <- 5*p
+
+N_rep <- 10
+
+
+```
+
+# Preamble {.tabset}
+
+## Packages
+
+Loading the required packages.
+
+```{r packages, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+library(mnormt)
+
+library(BDgraph)
+library(ssgraph)
+
+#remove.packages("mombf")
+#if (file.exists(".RData")) file.remove(".RData")
+#library(devtools)
+#install_github("davidrusi/mombf")
+
+library(mombf)
+
+library(ggplot2)
+library(ggpubr)
+library(patchwork)
+
+library(matrixStats)
+
+```
+
+## Plot Settings
+
+```{r plot_settings, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+My_Theme = theme(
+  #base_size = 10,# #default is 11 changes everything in proprotion
+  text=element_text(size=11),
+  axis.title.x = element_text(size = 11),
+  axis.text.x = element_text(size = 11),
+  axis.title.y = element_text(size = 11),
+  axis.text.y = element_text(size = 11),
+  plot.title = element_text(size = 11, face = "bold"),
+  legend.title=element_text(size=11), 
+  legend.text=element_text(size=11)
+  )
+
+scaleFUNy <- function(x) sprintf("%.4f", x)
+scaleFUNx <- function(x) sprintf("%.0f", x)
+
+```
+
+## Functions
+
+```{r functions, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+source("../functions/priorElicitation.R")
+source("../functions/general_functions.R")
+source("../functions/mixing_wrappers.R")
+
+```
+
+## Iterations
+
+Each iteration of ssgraph does every row and every column
+
+```{r iterations_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+warmup <- 0
+iterations_vec <- c(10, 50, 100, 300, 500, 750, 1000, 1500, 2000)
+iterations_vec_ssgraph <- c(10, 30, 50, 150, 250, 400, 500, 750, 1000)
+```
+
+## Prior Elicitation
+
+```{r prior_elicitation2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+w_slab_set <- 2/(p-1)
+
+get_set_diag_all <- set_diag_one(lower_bound = 1, prob = 0.99)
+
+lambda_set <- get_set_diag_all
+lambda_set
+
+N <- 5000
+#s_slab_grid <- seq(0.2, 2, length.out = 20)
+#s_slab_grid <- seq(0.75, 3, length.out = 20)
+s_slab_grid <- seq(3, 6, length.out = 20)
+lambda <- lambda_set
+probPD <- 0.95
+truncDiag <- TRUE
+verbose <- FALSE
+
+N_try <- length(s_slab_grid)
+probPD_eval <- rep(NA, N_try)
+for(i in 1:N_try){
+  probPD_eval[i] <- probPD_diagExp_SSGaussian(N, p, w_slab_set, s_slab = s_slab_grid[i], lambda_set, truncDiag, verbose)
+  if(verbose){
+    cat("\r", "try", i, "done", "\n")
+  }
+    
+}
+
+s_slab_set <- s_slab_grid[which.min(abs(probPD_eval - probPD))]
+s_slab_set
+
+```
+
+```{r prior_elicitation22, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+plot(s_slab_grid, abs(probPD_eval - probPD))
+
+```
+
+```{r prior, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+prior_params <- list("s_slab" = s_slab_set,
+                        "w_slab" = w_slab_set,
+                        "lambda" = lambda_set
+)
+
+```
+
+# Random_p {.tabset}
+
+```{r data_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+
+graph_type <- "random"
+graph_prob <- 1/p
+
+set.seed(-1)
+
+Theta_sim <- list()
+data_y <- list()
+
+for(i in 1:N_rep){
+  ggm <- NA
+  while(is.list(ggm) == FALSE){
+    G <- generate_G(p, type = graph_type, graph_prob = graph_prob)
+    ggm <- generate_Theta_y(n, G, min_rho = 0.1, max_rho = 0.5)
+  }
+  Theta_sim[[i]] <- ggm$Theta
+  data_y[[i]] <- ggm$y
+}
+
+```
+
+## ssgraph
+
+```{r ssgraph_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+ssgraph_sim1 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  
+  ssgraph_sim1[[i]] <- ssgraph_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec_ssgraph, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, s_spike = 2e-02)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+
+```
+
+```{r ssgraph_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+ssgraph_results_df <- data.frame( 
+  iter = iterations_vec_ssgraph/N_rep,
+  Time = rowMeans(ssgraph_sim1[[1]]$Time)/N_rep,
+  chain_Theta_MAE = ssgraph_sim1[[1]]$chain_Theta/N_rep,
+  Theta_MAE = ssgraph_sim1[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = ssgraph_sim1[[1]]$chain_p/N_rep,
+  p_MAE = ssgraph_sim1[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  ssgraph_results_df <- ssgraph_results_df + data.frame( 
+  iter = iterations_vec_ssgraph/N_rep,
+  Time = rowMeans(ssgraph_sim1[[i]]$Time)/N_rep,
+  chain_Theta_MAE = ssgraph_sim1[[i]]$chain_Theta/N_rep,
+  Theta_MAE = ssgraph_sim1[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = ssgraph_sim1[[i]]$chain_p/N_rep,
+  p_MAE = ssgraph_sim1[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+ssgraph_results_df["Method"] <- rep("ssgraph", length(iterations_vec))
+
+```
+
+
+## bdgraph
+
+Each iteration of bdgraph only updates one element, should at least scale this by the number of rows
+
+```{r bdgraph_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph_sim1 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  bdgraph_sim1[[i]] <- bdgraph_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+  
+
+```
+
+```{r bdgraph_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph_sim1[[1]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph_sim1[[1]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph_sim1[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph_sim1[[1]]$chain_p/N_rep,
+  p_MAE = bdgraph_sim1[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  bdgraph_results_df <- bdgraph_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph_sim1[[i]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph_sim1[[i]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph_sim1[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph_sim1[[i]]$chain_p/N_rep,
+  p_MAE = bdgraph_sim1[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+bdgraph_results_df["Method"] <- rep("bdgraph", length(iterations_vec))
+
+```
+
+## bdgraph.mpl
+
+Just going from save=FALSE to save=TRUE increases the computation a lot
+
+```{r bdgraph.mpl_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph.mpl_sim1 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+
+  bdgraph.mpl_sim1[[i]] <- bdgraph.mpl_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+  
+
+
+
+
+```
+
+
+```{r bdgraph.mpl_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph.mpl_results_p_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph.mpl_sim1[[1]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim1[[1]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim1[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim1[[1]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim1[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  bdgraph.mpl_results_p_df <- bdgraph.mpl_results_p_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph.mpl_sim1[[i]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim1[[i]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim1[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim1[[i]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim1[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+bdgraph.mpl_results_p_df["Method"] <- rep("bdgraph.mpl", length(iterations_vec))
+
+bdgraph.mpl_results_p_omega_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = (rowMeans(bdgraph.mpl_sim1[[1]]$Time) + rowMeans(bdgraph.mpl_sim1[[1]]$Time.omega))/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim1[[1]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim1[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim1[[1]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim1[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  bdgraph.mpl_results_p_omega_df <- bdgraph.mpl_results_p_omega_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = (rowMeans(bdgraph.mpl_sim1[[i]]$Time) + rowMeans(bdgraph.mpl_sim1[[i]]$Time.omega))/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim1[[i]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim1[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim1[[i]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim1[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+bdgraph.mpl_results_p_omega_df["Method"] <- rep("bdgraph.mpl", length(iterations_vec))
+
+```
+
+## Gibbs
+
+```{r Gibbs_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+Gibbs_sim1 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  Gibbs_sim1[[i]] <- Gibbs_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+
+
+```
+
+```{r Gibbs_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+Gibbs_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim1[[1]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim1[[1]]$chain_Theta/N_rep,
+  Theta_MAE = Gibbs_sim1[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim1[[1]]$chain_p/N_rep,
+  p_MAE = Gibbs_sim1[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  Gibbs_results_df <- Gibbs_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim1[[i]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim1[[i]]$chain_Theta/N_rep,
+  Theta_MAE = Gibbs_sim1[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim1[[i]]$chain_p/N_rep,
+  p_MAE = Gibbs_sim1[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+Gibbs_results_df["Method"] <- rep("Gibbs", length(iterations_vec))
+
+Gibbs_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim1[[1]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim1[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = Gibbs_sim1[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim1[[1]]$chain_p_noRB/N_rep,
+  p_MAE = Gibbs_sim1[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  Gibbs_noRB_results_df <- Gibbs_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim1[[i]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim1[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = Gibbs_sim1[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim1[[i]]$chain_p_noRB/N_rep,
+  p_MAE = Gibbs_sim1[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+Gibbs_noRB_results_df["Method"] <- rep("Gibbs_noRB", length(iterations_vec))
+
+```
+
+## BDMH
+
+```{r BDMH_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+BDMH_sim1 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  BDMH_sim1[[i]] <- BDMH_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+
+
+
+```
+
+```{r BDMH_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+BDMH_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim1[[1]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim1[[1]]$chain_Theta/N_rep,
+  Theta_MAE = BDMH_sim1[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = BDMH_sim1[[1]]$chain_p/N_rep,
+  p_MAE = BDMH_sim1[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  BDMH_results_df <- BDMH_results_df + data.frame(
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim1[[i]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim1[[i]]$chain_Theta/N_rep,
+  Theta_MAE = BDMH_sim1[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = BDMH_sim1[[i]]$chain_p/N_rep,
+  p_MAE = BDMH_sim1[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+BDMH_results_df["Method"] <- rep("BDMH", length(iterations_vec))
+
+BDMH_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim1[[1]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim1[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = BDMH_sim1[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = BDMH_sim1[[1]]$chain_p_noRB/N_rep,
+  p_MAE = BDMH_sim1[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  BDMH_noRB_results_df <- BDMH_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim1[[i]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim1[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = BDMH_sim1[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = BDMH_sim1[[i]]$chain_p_noRB/N_rep,
+  p_MAE = BDMH_sim1[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+BDMH_noRB_results_df["Method"] <- rep("BDMH_noRB", length(iterations_vec))
+
+```
+
+## LIT
+
+```{r LIT_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+LIT_sim1 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  LIT_sim1[[i]] <- LIT_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+
+
+
+```
+
+```{r LIT_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+LIT_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim1[[1]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim1[[1]]$chain_Theta/N_rep,
+  Theta_MAE = LIT_sim1[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = LIT_sim1[[1]]$chain_p/N_rep,
+  p_MAE = LIT_sim1[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  LIT_results_df <- LIT_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim1[[i]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim1[[i]]$chain_Theta/N_rep,
+  Theta_MAE = LIT_sim1[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = LIT_sim1[[i]]$chain_p/N_rep,
+  p_MAE = LIT_sim1[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+LIT_results_df["Method"] <- rep("LIT", length(iterations_vec))
+
+LIT_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim1[[1]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim1[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = LIT_sim1[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = LIT_sim1[[1]]$chain_p_noRB/N_rep,
+  p_MAE = LIT_sim1[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  LIT_noRB_results_df <- LIT_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim1[[i]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim1[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = LIT_sim1[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = LIT_sim1[[i]]$chain_p_noRB/N_rep,
+  p_MAE = LIT_sim1[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+LIT_noRB_results_df["Method"] <- rep("LIT_noRB", length(iterations_vec))
+
+```
+
+
+## GIMH (Gibbs, $\upsilon = 0.75$)
+
+```{r GIMH_Gibbs_Tempering0.75_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GIMH_Gibbs_sim1 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+    GIMH_Gibbs_sim1[[i]] <- GIMH_Gibbs_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, tempering=0.75)
+    
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r GIMH_Gibbs_Tempering0.75_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GIMH_Gibbs_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim1[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim1[[1]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim1[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim1[[1]]$chain_p/N_rep,
+  p_MAE = GIMH_Gibbs_sim1[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_Gibbs_results_df <- GIMH_Gibbs_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim1[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim1[[i]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim1[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim1[[i]]$chain_p/N_rep,
+  p_MAE = GIMH_Gibbs_sim1[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+GIMH_Gibbs_results_df["Method"] <- rep("GIMH_Gibbs", length(iterations_vec))
+
+GIMH_Gibbs_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim1[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim1[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim1[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim1[[1]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_Gibbs_sim1[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_Gibbs_noRB_results_df <- GIMH_Gibbs_noRB_results_df + data.frame(
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim1[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim1[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim1[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim1[[i]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_Gibbs_sim1[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+GIMH_Gibbs_noRB_results_df["Method"] <- rep("GIMH_Gibbs_noRB", length(iterations_vec))
+
+```
+
+## GIMH (BDMH, $\upsilon = 0.75$)
+
+p - columns per iteration and 1 updates per column (as an update is a full row) - so same number of updates as BirthDeath Full Scan
+
+```{r GIMH_BirthDeath_Tempering0.75_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GIMH_BDMH_sim1 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+    GIMH_BDMH_sim1[[i]] <- GIMH_BDMH_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, tempering=0.75)
+    
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+  
+
+
+
+
+
+```
+
+```{r GIMH_BirthDeath_Tempering0.75_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GIMH_BDMH_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim1[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim1[[1]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_BDMH_sim1[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim1[[1]]$chain_p/N_rep,
+  p_MAE = GIMH_BDMH_sim1[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_BDMH_results_df <- GIMH_BDMH_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim1[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim1[[i]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_BDMH_sim1[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim1[[i]]$chain_p/N_rep,
+  p_MAE = GIMH_BDMH_sim1[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+GIMH_BDMH_results_df["Method"] <- rep("GIMH_BDMH", length(iterations_vec))
+
+GIMH_BDMH_noRB_results_df <- data.frame(
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim1[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim1[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_BDMH_sim1[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim1[[1]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_BDMH_sim1[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_BDMH_noRB_results_df <- GIMH_BDMH_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim1[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim1[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_BDMH_sim1[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim1[[i]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_BDMH_sim1[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+GIMH_BDMH_noRB_results_df["Method"] <- rep("GIMH_BDMH_noRB", length(iterations_vec))
+
+```
+
+
+## regression.pl
+
+```{r regression.pl_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+regression.pl_sim1 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+    regression.pl_sim1[[i]] <- regression.pl_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+    
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+
+
+```
+
+```{r regression.pl_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+regression.pl_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(regression.pl_sim1[[1]]$Time)/N_rep,
+  chain_Theta_MAE = regression.pl_sim1[[1]]$chain_Theta/N_rep,
+  Theta_MAE = regression.pl_sim1[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = regression.pl_sim1[[1]]$chain_p/N_rep,
+  p_MAE = regression.pl_sim1[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  regression.pl_results_df <- regression.pl_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(regression.pl_sim1[[i]]$Time)/N_rep,
+  chain_Theta_MAE = regression.pl_sim1[[i]]$chain_Theta/N_rep,
+  Theta_MAE = regression.pl_sim1[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = regression.pl_sim1[[i]]$chain_p/N_rep,
+  p_MAE = regression.pl_sim1[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+regression.pl_results_df["Method"] <- rep("regression.pl", length(iterations_vec))
+
+```
+
+## Comparison Serial
+
+```{r Comparison_Serial_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+# https://stackoverflow.com/questions/38722202/how-do-i-change-the-number-of-decimal-places-on-axis-labels-in-ggplot2
+#Our transformation function
+
+comparison_results_df <- rbind(Gibbs_results_df, BDMH_results_df, LIT_results_df)
+
+
+sim1_serial_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 17, 15)) +
+    scale_color_manual(values = c("lightgrey", "darkgrey", "black")) +
+   scale_x_continuous(trans = "log", labels=scaleFUNx) +
+   scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
+sim1_serial_omega
+
+sim1_serial_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 17, 15)) +
+    scale_color_manual(values = c("lightgrey", "darkgrey", "black")) +
+   scale_x_continuous(trans = "log", labels=scaleFUNx) +
+   scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
+sim1_serial_p
+
+
+```
+
+
+## Comparison Rao-Blackwellised
+
+
+```{r Comparison_RB_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+comparison_results_df <- rbind(Gibbs_results_df, Gibbs_noRB_results_df, BDMH_results_df, BDMH_noRB_results_df)
+
+
+sim1_RB_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 7, 16, 7)) +
+    scale_color_manual(values = c("darkgrey", "darkgrey", "black", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
+sim1_RB_omega
+
+sim1_RB_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 7, 16, 7)) +
+    scale_color_manual(values = c("darkgrey", "darkgrey", "black", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
+sim1_RB_p
+
+
+```
+
+## Comparison Final
+
+
+```{r Comparison_Final_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+#IGNORING THE SAMPLING OF OMEGAS FOR BDGRAPH.MPL#
+comparison_results_p_df <- rbind(ssgraph_results_df, bdgraph_results_df, bdgraph.mpl_results_p_df, Gibbs_results_df, BDMH_results_df, GIMH_Gibbs_results_df, regression.pl_results_df)
+
+
+#INCLUDING THE SAMPLING OF OMEGAS FOR BDGRAPH.MPL#
+comparison_results_p_omega_df <- rbind(ssgraph_results_df, bdgraph_results_df, bdgraph.mpl_results_p_omega_df, Gibbs_results_df, BDMH_results_df, GIMH_Gibbs_results_df, regression.pl_results_df)
+
+sim1_Final_omega <- ggplot(comparison_results_p_omega_df, aes(x=Time, y=chain_Theta_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(15, 16, 7, 17, 18, 4, 8)) +
+    scale_color_manual(values = c("black", "darkgrey", "red", "red", "blue", "darkgrey", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
+sim1_Final_omega
+
+sim1_Final_p <- ggplot(comparison_results_p_df, aes(x=Time, y=chain_p_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(15, 16, 7, 17, 18, 4, 8)) +
+    scale_color_manual(values = c("black", "darkgrey", "red", "red", "blue", "darkgrey", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
+sim1_Final_p
+
+
+
+
+```
+
+# Random_2p {.tabset}
+
+
+```{r data_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+graph_type <- "random"
+graph_prob <- 2*1/p
+
+set.seed(2)
+
+Theta_sim <- list()
+data_y <- list()
+
+for(i in 1:N_rep){
+  ggm <- NA
+  while(is.list(ggm) == FALSE){
+    G <- generate_G(p, type = graph_type, graph_prob = graph_prob)
+    ggm <- generate_Theta_y(n, G, min_rho = 0.1, max_rho = 0.5)
+  }
+  Theta_sim[[i]] <- ggm$Theta
+  data_y[[i]] <- ggm$y
+}
+
+```
+
+## ssgraph
+
+```{r ssgraph_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+ssgraph_sim2 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  
+  ssgraph_sim2[[i]] <- ssgraph_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec_ssgraph, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, s_spike = 2e-02)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+
+```
+
+```{r ssgraph_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+ssgraph_results_df <- data.frame( 
+  iter = iterations_vec_ssgraph/N_rep,
+  Time = rowMeans(ssgraph_sim2[[1]]$Time)/N_rep,
+  chain_Theta_MAE = ssgraph_sim2[[1]]$chain_Theta/N_rep,
+  Theta_MAE = ssgraph_sim2[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = ssgraph_sim2[[1]]$chain_p/N_rep,
+  p_MAE = ssgraph_sim2[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  ssgraph_results_df <- ssgraph_results_df + data.frame( 
+  iter = iterations_vec_ssgraph/N_rep,
+  Time = rowMeans(ssgraph_sim2[[i]]$Time)/N_rep,
+  chain_Theta_MAE = ssgraph_sim2[[i]]$chain_Theta/N_rep,
+  Theta_MAE = ssgraph_sim2[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = ssgraph_sim2[[i]]$chain_p/N_rep,
+  p_MAE = ssgraph_sim2[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+ssgraph_results_df["Method"] <- rep("ssgraph", length(iterations_vec))
+
+```
+
+
+## bdgraph
+
+Each iteration of bdgraph only updates one element, should at least scale this by the number of rows
+
+```{r bdgraph_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph_sim2 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  bdgraph_sim2[[i]] <- bdgraph_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+  
+
+```
+
+```{r bdgraph_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph_sim2[[1]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph_sim2[[1]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph_sim2[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph_sim2[[1]]$chain_p/N_rep,
+  p_MAE = bdgraph_sim2[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  bdgraph_results_df <- bdgraph_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph_sim2[[i]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph_sim2[[i]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph_sim2[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph_sim2[[i]]$chain_p/N_rep,
+  p_MAE = bdgraph_sim2[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+bdgraph_results_df["Method"] <- rep("bdgraph", length(iterations_vec))
+
+```
+
+## bdgraph.mpl
+
+Just going from save=FALSE to save=TRUE increases the computation a lot
+
+```{r bdgraph.mpl_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph.mpl_sim2 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+
+  bdgraph.mpl_sim2[[i]] <- bdgraph.mpl_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+  
+
+
+
+
+```
+
+
+```{r bdgraph.mpl_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph.mpl_results_p_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph.mpl_sim2[[1]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim2[[1]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim2[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim2[[1]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim2[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  bdgraph.mpl_results_p_df <- bdgraph.mpl_results_p_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph.mpl_sim2[[i]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim2[[i]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim2[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim2[[i]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim2[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+bdgraph.mpl_results_p_df["Method"] <- rep("bdgraph.mpl", length(iterations_vec))
+
+bdgraph.mpl_results_p_omega_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = (rowMeans(bdgraph.mpl_sim2[[1]]$Time) + rowMeans(bdgraph.mpl_sim2[[1]]$Time.omega))/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim2[[1]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim2[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim2[[1]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim2[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  bdgraph.mpl_results_p_omega_df <- bdgraph.mpl_results_p_omega_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = (rowMeans(bdgraph.mpl_sim2[[i]]$Time) + rowMeans(bdgraph.mpl_sim2[[i]]$Time.omega))/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim2[[i]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim2[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim2[[i]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim2[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+bdgraph.mpl_results_p_omega_df["Method"] <- rep("bdgraph.mpl", length(iterations_vec))
+
+```
+
+## Gibbs
+
+```{r Gibbs_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+Gibbs_sim2 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  Gibbs_sim2[[i]] <- Gibbs_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+
+
+```
+
+```{r Gibbs_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+Gibbs_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim2[[1]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim2[[1]]$chain_Theta/N_rep,
+  Theta_MAE = Gibbs_sim2[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim2[[1]]$chain_p/N_rep,
+  p_MAE = Gibbs_sim2[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  Gibbs_results_df <- Gibbs_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim2[[i]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim2[[i]]$chain_Theta/N_rep,
+  Theta_MAE = Gibbs_sim2[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim2[[i]]$chain_p/N_rep,
+  p_MAE = Gibbs_sim2[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+Gibbs_results_df["Method"] <- rep("Gibbs", length(iterations_vec))
+
+Gibbs_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim2[[1]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim2[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = Gibbs_sim2[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim2[[1]]$chain_p_noRB/N_rep,
+  p_MAE = Gibbs_sim2[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  Gibbs_noRB_results_df <- Gibbs_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim2[[i]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim2[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = Gibbs_sim2[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim2[[i]]$chain_p_noRB/N_rep,
+  p_MAE = Gibbs_sim2[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+Gibbs_noRB_results_df["Method"] <- rep("Gibbs_noRB", length(iterations_vec))
+
+```
+
+## BDMH
+
+```{r BDMH_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+BDMH_sim2 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  BDMH_sim2[[i]] <- BDMH_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+
+
+
+```
+
+```{r BDMH_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+BDMH_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim2[[1]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim2[[1]]$chain_Theta/N_rep,
+  Theta_MAE = BDMH_sim2[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = BDMH_sim2[[1]]$chain_p/N_rep,
+  p_MAE = BDMH_sim2[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  BDMH_results_df <- BDMH_results_df + data.frame(
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim2[[i]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim2[[i]]$chain_Theta/N_rep,
+  Theta_MAE = BDMH_sim2[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = BDMH_sim2[[i]]$chain_p/N_rep,
+  p_MAE = BDMH_sim2[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+BDMH_results_df["Method"] <- rep("BDMH", length(iterations_vec))
+
+BDMH_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim2[[1]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim2[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = BDMH_sim2[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = BDMH_sim2[[1]]$chain_p_noRB/N_rep,
+  p_MAE = BDMH_sim2[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  BDMH_noRB_results_df <- BDMH_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim2[[i]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim2[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = BDMH_sim2[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = BDMH_sim2[[i]]$chain_p_noRB/N_rep,
+  p_MAE = BDMH_sim2[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+BDMH_noRB_results_df["Method"] <- rep("BDMH_noRB", length(iterations_vec))
+
+```
+
+## LIT
+
+```{r LIT_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+LIT_sim2 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  LIT_sim2[[i]] <- LIT_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+
+
+
+```
+
+```{r LIT_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+LIT_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim2[[1]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim2[[1]]$chain_Theta/N_rep,
+  Theta_MAE = LIT_sim2[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = LIT_sim2[[1]]$chain_p/N_rep,
+  p_MAE = LIT_sim2[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  LIT_results_df <- LIT_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim2[[i]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim2[[i]]$chain_Theta/N_rep,
+  Theta_MAE = LIT_sim2[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = LIT_sim2[[i]]$chain_p/N_rep,
+  p_MAE = LIT_sim2[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+LIT_results_df["Method"] <- rep("LIT", length(iterations_vec))
+
+LIT_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim2[[1]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim2[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = LIT_sim2[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = LIT_sim2[[1]]$chain_p_noRB/N_rep,
+  p_MAE = LIT_sim2[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  LIT_noRB_results_df <- LIT_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim2[[i]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim2[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = LIT_sim2[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = LIT_sim2[[i]]$chain_p_noRB/N_rep,
+  p_MAE = LIT_sim2[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+LIT_noRB_results_df["Method"] <- rep("LIT_noRB", length(iterations_vec))
+
+```
+
+
+## GIMH (Gibbs, $\upsilon = 0.75$)
+
+```{r GIMH_Gibbs_Tempering0.75_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GIMH_Gibbs_sim2 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+    GIMH_Gibbs_sim2[[i]] <- GIMH_Gibbs_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, tempering=0.75)
+    
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r GIMH_Gibbs_Tempering0.75_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GIMH_Gibbs_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim2[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim2[[1]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim2[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim2[[1]]$chain_p/N_rep,
+  p_MAE = GIMH_Gibbs_sim2[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_Gibbs_results_df <- GIMH_Gibbs_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim2[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim2[[i]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim2[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim2[[i]]$chain_p/N_rep,
+  p_MAE = GIMH_Gibbs_sim2[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+GIMH_Gibbs_results_df["Method"] <- rep("GIMH_Gibbs", length(iterations_vec))
+
+GIMH_Gibbs_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim2[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim2[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim2[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim2[[1]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_Gibbs_sim2[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_Gibbs_noRB_results_df <- GIMH_Gibbs_noRB_results_df + data.frame(
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim2[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim2[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim2[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim2[[i]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_Gibbs_sim2[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+GIMH_Gibbs_noRB_results_df["Method"] <- rep("GIMH_Gibbs_noRB", length(iterations_vec))
+
+```
+
+## GIMH (BDMH, $\upsilon = 0.75$)
+
+p - columns per iteration and 1 updates per column (as an update is a full row) - so same number of updates as BirthDeath Full Scan
+
+```{r GIMH_BirthDeath_Tempering0.75_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GIMH_BDMH_sim2 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+    GIMH_BDMH_sim2[[i]] <- GIMH_BDMH_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, tempering=0.75)
+    
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+  
+
+
+
+
+
+```
+
+```{r GIMH_BirthDeath_Tempering0.75_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GIMH_BDMH_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim2[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim2[[1]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_BDMH_sim2[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim2[[1]]$chain_p/N_rep,
+  p_MAE = GIMH_BDMH_sim2[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_BDMH_results_df <- GIMH_BDMH_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim2[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim2[[i]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_BDMH_sim2[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim2[[i]]$chain_p/N_rep,
+  p_MAE = GIMH_BDMH_sim2[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+GIMH_BDMH_results_df["Method"] <- rep("GIMH_BDMH", length(iterations_vec))
+
+GIMH_BDMH_noRB_results_df <- data.frame(
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim2[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim2[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_BDMH_sim2[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim2[[1]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_BDMH_sim2[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_BDMH_noRB_results_df <- GIMH_BDMH_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim2[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim2[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_BDMH_sim2[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim2[[i]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_BDMH_sim2[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+GIMH_BDMH_noRB_results_df["Method"] <- rep("GIMH_BDMH_noRB", length(iterations_vec))
+
+```
+
+
+## regression.pl
+
+```{r regression.pl_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+regression.pl_sim2 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+    regression.pl_sim2[[i]] <- regression.pl_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+    
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+
+
+```
+
+```{r regression.pl_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+regression.pl_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(regression.pl_sim2[[1]]$Time)/N_rep,
+  chain_Theta_MAE = regression.pl_sim2[[1]]$chain_Theta/N_rep,
+  Theta_MAE = regression.pl_sim2[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = regression.pl_sim2[[1]]$chain_p/N_rep,
+  p_MAE = regression.pl_sim2[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  regression.pl_results_df <- regression.pl_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(regression.pl_sim2[[i]]$Time)/N_rep,
+  chain_Theta_MAE = regression.pl_sim2[[i]]$chain_Theta/N_rep,
+  Theta_MAE = regression.pl_sim2[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = regression.pl_sim2[[i]]$chain_p/N_rep,
+  p_MAE = regression.pl_sim2[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+regression.pl_results_df["Method"] <- rep("regression.pl", length(iterations_vec))
+
+```
+
+## Comparison Serial
+
+```{r Comparison_Serial_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+# https://stackoverflow.com/questions/38722202/how-do-i-change-the-number-of-decimal-places-on-axis-labels-in-ggplot2
+#Our transformation function
+
+comparison_results_df <- rbind(Gibbs_results_df, BDMH_results_df, LIT_results_df)
+
+
+sim2_serial_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 17, 15)) +
+    scale_color_manual(values = c("lightgrey", "darkgrey", "black")) +
+   scale_x_continuous(trans = "log", labels=scaleFUNx) +
+   scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
+sim2_serial_omega
+
+sim2_serial_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 17, 15)) +
+    scale_color_manual(values = c("lightgrey", "darkgrey", "black")) +
+   scale_x_continuous(trans = "log", labels=scaleFUNx) +
+   scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
+sim2_serial_p
+
+
+```
+
+
+## Comparison Rao-Blackwellised
+
+
+```{r Comparison_RB_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+comparison_results_df <- rbind(Gibbs_results_df, Gibbs_noRB_results_df, BDMH_results_df, BDMH_noRB_results_df)
+
+
+sim2_RB_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 7, 16, 7)) +
+    scale_color_manual(values = c("darkgrey", "darkgrey", "black", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
+sim2_RB_omega
+
+sim2_RB_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 7, 16, 7)) +
+    scale_color_manual(values = c("darkgrey", "darkgrey", "black", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
+sim2_RB_p
+
+
+```
+
+## Comparison Final
+
+
+```{r Comparison_Final_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+#IGNORING THE SAMPLING OF OMEGAS FOR BDGRAPH.MPL#
+comparison_results_p_df <- rbind(ssgraph_results_df, bdgraph_results_df, bdgraph.mpl_results_p_df, Gibbs_results_df, BDMH_results_df, GIMH_Gibbs_results_df, regression.pl_results_df)
+
+
+#INCLUDING THE SAMPLING OF OMEGAS FOR BDGRAPH.MPL#
+comparison_results_p_omega_df <- rbind(ssgraph_results_df, bdgraph_results_df, bdgraph.mpl_results_p_omega_df, Gibbs_results_df, BDMH_results_df, GIMH_Gibbs_results_df, regression.pl_results_df)
+
+sim2_Final_omega <- ggplot(comparison_results_p_omega_df, aes(x=Time, y=chain_Theta_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(15, 16, 7, 17, 18, 4, 8)) +
+    scale_color_manual(values = c("black", "darkgrey", "red", "red", "blue", "darkgrey", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
+sim2_Final_omega
+
+sim2_Final_p <- ggplot(comparison_results_p_df, aes(x=Time, y=chain_p_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(15, 16, 7, 17, 18, 4, 8)) +
+    scale_color_manual(values = c("black", "darkgrey", "red", "red", "blue", "darkgrey", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
+sim2_Final_p
+
+
+
+
+```
+
+
+# Tridiagonal   {.tabset}
+
+
+```{r data_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+graph_type <- "tridiagonal"
+size <- p
+
+set.seed(3)
+
+Theta_sim <- list()
+data_y <- list()
+
+for(i in 1:N_rep){
+  ggm <- NA
+  while(is.list(ggm) == FALSE){
+    G <- generate_G(p, type = graph_type, size = size)
+    ggm <- generate_Theta_y(n, G, min_rho = 0.1, max_rho = 0.5)
+  }
+  Theta_sim[[i]] <- ggm$Theta
+  data_y[[i]] <- ggm$y
+}
+
+```
+
+## ssgraph
+
+```{r ssgraph_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+ssgraph_sim3 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  
+  ssgraph_sim3[[i]] <- ssgraph_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec_ssgraph, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, s_spike = 2e-02)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+
+```
+
+```{r ssgraph_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+ssgraph_results_df <- data.frame( 
+  iter = iterations_vec_ssgraph/N_rep,
+  Time = rowMeans(ssgraph_sim3[[1]]$Time)/N_rep,
+  chain_Theta_MAE = ssgraph_sim3[[1]]$chain_Theta/N_rep,
+  Theta_MAE = ssgraph_sim3[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = ssgraph_sim3[[1]]$chain_p/N_rep,
+  p_MAE = ssgraph_sim3[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  ssgraph_results_df <- ssgraph_results_df + data.frame( 
+  iter = iterations_vec_ssgraph/N_rep,
+  Time = rowMeans(ssgraph_sim3[[i]]$Time)/N_rep,
+  chain_Theta_MAE = ssgraph_sim3[[i]]$chain_Theta/N_rep,
+  Theta_MAE = ssgraph_sim3[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = ssgraph_sim3[[i]]$chain_p/N_rep,
+  p_MAE = ssgraph_sim3[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+ssgraph_results_df["Method"] <- rep("ssgraph", length(iterations_vec))
+
+```
+
+
+## bdgraph
+
+Each iteration of bdgraph only updates one element, should at least scale this by the number of rows
+
+```{r bdgraph_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph_sim3 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  bdgraph_sim3[[i]] <- bdgraph_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+  
+
+```
+
+```{r bdgraph_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph_sim3[[1]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph_sim3[[1]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph_sim3[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph_sim3[[1]]$chain_p/N_rep,
+  p_MAE = bdgraph_sim3[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  bdgraph_results_df <- bdgraph_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph_sim3[[i]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph_sim3[[i]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph_sim3[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph_sim3[[i]]$chain_p/N_rep,
+  p_MAE = bdgraph_sim3[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+bdgraph_results_df["Method"] <- rep("bdgraph", length(iterations_vec))
+
+```
+
+## bdgraph.mpl
+
+Just going from save=FALSE to save=TRUE increases the computation a lot
+
+```{r bdgraph.mpl_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph.mpl_sim3 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+
+  bdgraph.mpl_sim3[[i]] <- bdgraph.mpl_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+  
+
+
+
+
+```
+
+
+```{r bdgraph.mpl_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph.mpl_results_p_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph.mpl_sim3[[1]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim3[[1]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim3[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim3[[1]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim3[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  bdgraph.mpl_results_p_df <- bdgraph.mpl_results_p_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph.mpl_sim3[[i]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim3[[i]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim3[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim3[[i]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim3[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+bdgraph.mpl_results_p_df["Method"] <- rep("bdgraph.mpl", length(iterations_vec))
+
+bdgraph.mpl_results_p_omega_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = (rowMeans(bdgraph.mpl_sim3[[1]]$Time) + rowMeans(bdgraph.mpl_sim3[[1]]$Time.omega))/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim3[[1]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim3[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim3[[1]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim3[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  bdgraph.mpl_results_p_omega_df <- bdgraph.mpl_results_p_omega_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = (rowMeans(bdgraph.mpl_sim3[[i]]$Time) + rowMeans(bdgraph.mpl_sim3[[i]]$Time.omega))/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim3[[i]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim3[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim3[[i]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim3[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+bdgraph.mpl_results_p_omega_df["Method"] <- rep("bdgraph.mpl", length(iterations_vec))
+
+```
+
+## Gibbs
+
+```{r Gibbs_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+Gibbs_sim3 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  Gibbs_sim3[[i]] <- Gibbs_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+
+
+```
+
+```{r Gibbs_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+Gibbs_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim3[[1]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim3[[1]]$chain_Theta/N_rep,
+  Theta_MAE = Gibbs_sim3[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim3[[1]]$chain_p/N_rep,
+  p_MAE = Gibbs_sim3[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  Gibbs_results_df <- Gibbs_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim3[[i]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim3[[i]]$chain_Theta/N_rep,
+  Theta_MAE = Gibbs_sim3[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim3[[i]]$chain_p/N_rep,
+  p_MAE = Gibbs_sim3[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+Gibbs_results_df["Method"] <- rep("Gibbs", length(iterations_vec))
+
+Gibbs_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim3[[1]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim3[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = Gibbs_sim3[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim3[[1]]$chain_p_noRB/N_rep,
+  p_MAE = Gibbs_sim3[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  Gibbs_noRB_results_df <- Gibbs_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim3[[i]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim3[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = Gibbs_sim3[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim3[[i]]$chain_p_noRB/N_rep,
+  p_MAE = Gibbs_sim3[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+Gibbs_noRB_results_df["Method"] <- rep("Gibbs_noRB", length(iterations_vec))
+
+```
+
+## BDMH
+
+```{r BDMH_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+BDMH_sim3 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  BDMH_sim3[[i]] <- BDMH_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+
+
+
+```
+
+```{r BDMH_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+BDMH_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim3[[1]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim3[[1]]$chain_Theta/N_rep,
+  Theta_MAE = BDMH_sim3[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = BDMH_sim3[[1]]$chain_p/N_rep,
+  p_MAE = BDMH_sim3[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  BDMH_results_df <- BDMH_results_df + data.frame(
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim3[[i]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim3[[i]]$chain_Theta/N_rep,
+  Theta_MAE = BDMH_sim3[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = BDMH_sim3[[i]]$chain_p/N_rep,
+  p_MAE = BDMH_sim3[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+BDMH_results_df["Method"] <- rep("BDMH", length(iterations_vec))
+
+BDMH_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim3[[1]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim3[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = BDMH_sim3[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = BDMH_sim3[[1]]$chain_p_noRB/N_rep,
+  p_MAE = BDMH_sim3[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  BDMH_noRB_results_df <- BDMH_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim3[[i]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim3[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = BDMH_sim3[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = BDMH_sim3[[i]]$chain_p_noRB/N_rep,
+  p_MAE = BDMH_sim3[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+BDMH_noRB_results_df["Method"] <- rep("BDMH_noRB", length(iterations_vec))
+
+```
+
+## LIT
+
+```{r LIT_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+LIT_sim3 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  LIT_sim3[[i]] <- LIT_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+
+
+
+```
+
+```{r LIT_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+LIT_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim3[[1]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim3[[1]]$chain_Theta/N_rep,
+  Theta_MAE = LIT_sim3[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = LIT_sim3[[1]]$chain_p/N_rep,
+  p_MAE = LIT_sim3[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  LIT_results_df <- LIT_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim3[[i]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim3[[i]]$chain_Theta/N_rep,
+  Theta_MAE = LIT_sim3[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = LIT_sim3[[i]]$chain_p/N_rep,
+  p_MAE = LIT_sim3[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+LIT_results_df["Method"] <- rep("LIT", length(iterations_vec))
+
+LIT_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim3[[1]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim3[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = LIT_sim3[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = LIT_sim3[[1]]$chain_p_noRB/N_rep,
+  p_MAE = LIT_sim3[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  LIT_noRB_results_df <- LIT_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim3[[i]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim3[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = LIT_sim3[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = LIT_sim3[[i]]$chain_p_noRB/N_rep,
+  p_MAE = LIT_sim3[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+LIT_noRB_results_df["Method"] <- rep("LIT_noRB", length(iterations_vec))
+
+```
+
+
+## GIMH (Gibbs, $\upsilon = 0.75$)
+
+```{r GIMH_Gibbs_Tempering0.75_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GIMH_Gibbs_sim3 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+    GIMH_Gibbs_sim3[[i]] <- GIMH_Gibbs_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, tempering=0.75)
+    
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r GIMH_Gibbs_Tempering0.75_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GIMH_Gibbs_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim3[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim3[[1]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim3[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim3[[1]]$chain_p/N_rep,
+  p_MAE = GIMH_Gibbs_sim3[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_Gibbs_results_df <- GIMH_Gibbs_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim3[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim3[[i]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim3[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim3[[i]]$chain_p/N_rep,
+  p_MAE = GIMH_Gibbs_sim3[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+GIMH_Gibbs_results_df["Method"] <- rep("GIMH_Gibbs", length(iterations_vec))
+
+GIMH_Gibbs_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim3[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim3[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim3[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim3[[1]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_Gibbs_sim3[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_Gibbs_noRB_results_df <- GIMH_Gibbs_noRB_results_df + data.frame(
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim3[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim3[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim3[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim3[[i]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_Gibbs_sim3[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+GIMH_Gibbs_noRB_results_df["Method"] <- rep("GIMH_Gibbs_noRB", length(iterations_vec))
+
+```
+
+## GIMH (BDMH, $\upsilon = 0.75$)
+
+p - columns per iteration and 1 updates per column (as an update is a full row) - so same number of updates as BirthDeath Full Scan
+
+```{r GIMH_BirthDeath_Tempering0.75_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GIMH_BDMH_sim3 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+    GIMH_BDMH_sim3[[i]] <- GIMH_BDMH_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, tempering=0.75)
+    
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+  
+
+
+
+
+
+```
+
+```{r GIMH_BirthDeath_Tempering0.75_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GIMH_BDMH_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim3[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim3[[1]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_BDMH_sim3[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim3[[1]]$chain_p/N_rep,
+  p_MAE = GIMH_BDMH_sim3[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_BDMH_results_df <- GIMH_BDMH_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim3[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim3[[i]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_BDMH_sim3[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim3[[i]]$chain_p/N_rep,
+  p_MAE = GIMH_BDMH_sim3[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+GIMH_BDMH_results_df["Method"] <- rep("GIMH_BDMH", length(iterations_vec))
+
+GIMH_BDMH_noRB_results_df <- data.frame(
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim3[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim3[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_BDMH_sim3[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim3[[1]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_BDMH_sim3[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_BDMH_noRB_results_df <- GIMH_BDMH_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim3[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim3[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_BDMH_sim3[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim3[[i]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_BDMH_sim3[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+GIMH_BDMH_noRB_results_df["Method"] <- rep("GIMH_BDMH_noRB", length(iterations_vec))
+
+```
+
+
+## regression.pl
+
+```{r regression.pl_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+regression.pl_sim3 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+    regression.pl_sim3[[i]] <- regression.pl_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+    
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+
+
+```
+
+```{r regression.pl_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+regression.pl_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(regression.pl_sim3[[1]]$Time)/N_rep,
+  chain_Theta_MAE = regression.pl_sim3[[1]]$chain_Theta/N_rep,
+  Theta_MAE = regression.pl_sim3[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = regression.pl_sim3[[1]]$chain_p/N_rep,
+  p_MAE = regression.pl_sim3[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  regression.pl_results_df <- regression.pl_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(regression.pl_sim3[[i]]$Time)/N_rep,
+  chain_Theta_MAE = regression.pl_sim3[[i]]$chain_Theta/N_rep,
+  Theta_MAE = regression.pl_sim3[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = regression.pl_sim3[[i]]$chain_p/N_rep,
+  p_MAE = regression.pl_sim3[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+regression.pl_results_df["Method"] <- rep("regression.pl", length(iterations_vec))
+
+```
+
+## Comparison Serial
+
+```{r Comparison_Serial_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+# https://stackoverflow.com/questions/38722202/how-do-i-change-the-number-of-decimal-places-on-axis-labels-in-ggplot2
+#Our transformation function
+
+comparison_results_df <- rbind(Gibbs_results_df, BDMH_results_df, LIT_results_df)
+
+
+sim3_serial_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 17, 15)) +
+    scale_color_manual(values = c("lightgrey", "darkgrey", "black")) +
+   scale_x_continuous(trans = "log", labels=scaleFUNx) +
+   scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
+sim3_serial_omega
+
+sim3_serial_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 17, 15)) +
+    scale_color_manual(values = c("lightgrey", "darkgrey", "black")) +
+   scale_x_continuous(trans = "log", labels=scaleFUNx) +
+   scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
+sim3_serial_p
+
+
+```
+
+
+## Comparison Rao-Blackwellised
+
+
+```{r Comparison_RB_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+comparison_results_df <- rbind(Gibbs_results_df, Gibbs_noRB_results_df, BDMH_results_df, BDMH_noRB_results_df)
+
+
+sim3_RB_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 7, 16, 7)) +
+    scale_color_manual(values = c("darkgrey", "darkgrey", "black", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
+sim3_RB_omega
+
+sim3_RB_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 7, 16, 7)) +
+    scale_color_manual(values = c("darkgrey", "darkgrey", "black", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
+sim3_RB_p
+
+
+```
+
+## Comparison Final
+
+
+```{r Comparison_Final_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+#IGNORING THE SAMPLING OF OMEGAS FOR BDGRAPH.MPL#
+comparison_results_p_df <- rbind(ssgraph_results_df, bdgraph_results_df, bdgraph.mpl_results_p_df, Gibbs_results_df, BDMH_results_df, GIMH_Gibbs_results_df, regression.pl_results_df)
+
+
+#INCLUDING THE SAMPLING OF OMEGAS FOR BDGRAPH.MPL#
+comparison_results_p_omega_df <- rbind(ssgraph_results_df, bdgraph_results_df, bdgraph.mpl_results_p_omega_df, Gibbs_results_df, BDMH_results_df, GIMH_Gibbs_results_df, regression.pl_results_df)
+
+sim3_Final_omega <- ggplot(comparison_results_p_omega_df, aes(x=Time, y=chain_Theta_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(15, 16, 7, 17, 18, 4, 8)) +
+    scale_color_manual(values = c("black", "darkgrey", "red", "red", "blue", "darkgrey", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
+sim3_Final_omega
+
+sim3_Final_p <- ggplot(comparison_results_p_df, aes(x=Time, y=chain_p_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(15, 16, 7, 17, 18, 4, 8)) +
+    scale_color_manual(values = c("black", "darkgrey", "red", "red", "blue", "darkgrey", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
+sim3_Final_p
+
+
+
+
+```
+
+
+
+# Blockdiagonal {.tabset}
+
+```{r data_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+graph_type <- "blockdiagonal"
+size <- 4
+
+set.seed(4)
+
+Theta_sim <- list()
+data_y <- list()
+
+for(i in 1:N_rep){
+  ggm <- NA
+  while(is.list(ggm) == FALSE){
+    G <- generate_G(p, type = graph_type, size = size)
+    ggm <- generate_Theta_y(n, G, min_rho = 0.1, max_rho = 0.5)
+  }
+  Theta_sim[[i]] <- ggm$Theta
+  data_y[[i]] <- ggm$y
+}
+
+```
+
+## ssgraph
+
+```{r ssgraph_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+ssgraph_sim4 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  
+  ssgraph_sim4[[i]] <- ssgraph_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec_ssgraph, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, s_spike = 2e-02)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+
+```
+
+```{r ssgraph_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+ssgraph_results_df <- data.frame( 
+  iter = iterations_vec_ssgraph/N_rep,
+  Time = rowMeans(ssgraph_sim4[[1]]$Time)/N_rep,
+  chain_Theta_MAE = ssgraph_sim4[[1]]$chain_Theta/N_rep,
+  Theta_MAE = ssgraph_sim4[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = ssgraph_sim4[[1]]$chain_p/N_rep,
+  p_MAE = ssgraph_sim4[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  ssgraph_results_df <- ssgraph_results_df + data.frame( 
+  iter = iterations_vec_ssgraph/N_rep,
+  Time = rowMeans(ssgraph_sim4[[i]]$Time)/N_rep,
+  chain_Theta_MAE = ssgraph_sim4[[i]]$chain_Theta/N_rep,
+  Theta_MAE = ssgraph_sim4[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = ssgraph_sim4[[i]]$chain_p/N_rep,
+  p_MAE = ssgraph_sim4[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+ssgraph_results_df["Method"] <- rep("ssgraph", length(iterations_vec))
+
+```
+
+
+## bdgraph
+
+Each iteration of bdgraph only updates one element, should at least scale this by the number of rows
+
+```{r bdgraph_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph_sim4 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  bdgraph_sim4[[i]] <- bdgraph_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+  
+
+```
+
+```{r bdgraph_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph_sim4[[1]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph_sim4[[1]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph_sim4[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph_sim4[[1]]$chain_p/N_rep,
+  p_MAE = bdgraph_sim4[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  bdgraph_results_df <- bdgraph_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph_sim4[[i]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph_sim4[[i]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph_sim4[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph_sim4[[i]]$chain_p/N_rep,
+  p_MAE = bdgraph_sim4[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+bdgraph_results_df["Method"] <- rep("bdgraph", length(iterations_vec))
+
+```
+
+## bdgraph.mpl
+
+Just going from save=FALSE to save=TRUE increases the computation a lot
+
+```{r bdgraph.mpl_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph.mpl_sim4 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+
+  bdgraph.mpl_sim4[[i]] <- bdgraph.mpl_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+  
+
+
+
+
+```
+
+
+```{r bdgraph.mpl_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph.mpl_results_p_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph.mpl_sim4[[1]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim4[[1]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim4[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim4[[1]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim4[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  bdgraph.mpl_results_p_df <- bdgraph.mpl_results_p_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph.mpl_sim4[[i]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim4[[i]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim4[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim4[[i]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim4[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+bdgraph.mpl_results_p_df["Method"] <- rep("bdgraph.mpl", length(iterations_vec))
+
+bdgraph.mpl_results_p_omega_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = (rowMeans(bdgraph.mpl_sim4[[1]]$Time) + rowMeans(bdgraph.mpl_sim4[[1]]$Time.omega))/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim4[[1]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim4[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim4[[1]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim4[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  bdgraph.mpl_results_p_omega_df <- bdgraph.mpl_results_p_omega_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = (rowMeans(bdgraph.mpl_sim4[[i]]$Time) + rowMeans(bdgraph.mpl_sim4[[i]]$Time.omega))/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim4[[i]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim4[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim4[[i]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim4[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+bdgraph.mpl_results_p_omega_df["Method"] <- rep("bdgraph.mpl", length(iterations_vec))
+
+```
+
+## Gibbs
+
+```{r Gibbs_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+Gibbs_sim4 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  Gibbs_sim4[[i]] <- Gibbs_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+
+
+```
+
+```{r Gibbs_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+Gibbs_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim4[[1]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim4[[1]]$chain_Theta/N_rep,
+  Theta_MAE = Gibbs_sim4[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim4[[1]]$chain_p/N_rep,
+  p_MAE = Gibbs_sim4[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  Gibbs_results_df <- Gibbs_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim4[[i]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim4[[i]]$chain_Theta/N_rep,
+  Theta_MAE = Gibbs_sim4[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim4[[i]]$chain_p/N_rep,
+  p_MAE = Gibbs_sim4[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+Gibbs_results_df["Method"] <- rep("Gibbs", length(iterations_vec))
+
+Gibbs_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim4[[1]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim4[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = Gibbs_sim4[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim4[[1]]$chain_p_noRB/N_rep,
+  p_MAE = Gibbs_sim4[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  Gibbs_noRB_results_df <- Gibbs_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim4[[i]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim4[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = Gibbs_sim4[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim4[[i]]$chain_p_noRB/N_rep,
+  p_MAE = Gibbs_sim4[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+Gibbs_noRB_results_df["Method"] <- rep("Gibbs_noRB", length(iterations_vec))
+
+```
+
+## BDMH
+
+```{r BDMH_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+BDMH_sim4 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  BDMH_sim4[[i]] <- BDMH_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+
+
+
+```
+
+```{r BDMH_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+BDMH_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim4[[1]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim4[[1]]$chain_Theta/N_rep,
+  Theta_MAE = BDMH_sim4[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = BDMH_sim4[[1]]$chain_p/N_rep,
+  p_MAE = BDMH_sim4[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  BDMH_results_df <- BDMH_results_df + data.frame(
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim4[[i]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim4[[i]]$chain_Theta/N_rep,
+  Theta_MAE = BDMH_sim4[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = BDMH_sim4[[i]]$chain_p/N_rep,
+  p_MAE = BDMH_sim4[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+BDMH_results_df["Method"] <- rep("BDMH", length(iterations_vec))
+
+BDMH_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim4[[1]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim4[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = BDMH_sim4[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = BDMH_sim4[[1]]$chain_p_noRB/N_rep,
+  p_MAE = BDMH_sim4[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  BDMH_noRB_results_df <- BDMH_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim4[[i]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim4[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = BDMH_sim4[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = BDMH_sim4[[i]]$chain_p_noRB/N_rep,
+  p_MAE = BDMH_sim4[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+BDMH_noRB_results_df["Method"] <- rep("BDMH_noRB", length(iterations_vec))
+
+```
+
+## LIT
+
+```{r LIT_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+LIT_sim4 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  LIT_sim4[[i]] <- LIT_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+
+
+
+```
+
+```{r LIT_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+LIT_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim4[[1]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim4[[1]]$chain_Theta/N_rep,
+  Theta_MAE = LIT_sim4[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = LIT_sim4[[1]]$chain_p/N_rep,
+  p_MAE = LIT_sim4[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  LIT_results_df <- LIT_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim4[[i]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim4[[i]]$chain_Theta/N_rep,
+  Theta_MAE = LIT_sim4[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = LIT_sim4[[i]]$chain_p/N_rep,
+  p_MAE = LIT_sim4[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+LIT_results_df["Method"] <- rep("LIT", length(iterations_vec))
+
+LIT_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim4[[1]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim4[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = LIT_sim4[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = LIT_sim4[[1]]$chain_p_noRB/N_rep,
+  p_MAE = LIT_sim4[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  LIT_noRB_results_df <- LIT_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim4[[i]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim4[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = LIT_sim4[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = LIT_sim4[[i]]$chain_p_noRB/N_rep,
+  p_MAE = LIT_sim4[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+LIT_noRB_results_df["Method"] <- rep("LIT_noRB", length(iterations_vec))
+
+```
+
+
+## GIMH (Gibbs, $\upsilon = 0.75$)
+
+```{r GIMH_Gibbs_Tempering0.75_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GIMH_Gibbs_sim4 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+    GIMH_Gibbs_sim4[[i]] <- GIMH_Gibbs_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, tempering=0.75)
+    
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r GIMH_Gibbs_Tempering0.75_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GIMH_Gibbs_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim4[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim4[[1]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim4[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim4[[1]]$chain_p/N_rep,
+  p_MAE = GIMH_Gibbs_sim4[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_Gibbs_results_df <- GIMH_Gibbs_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim4[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim4[[i]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim4[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim4[[i]]$chain_p/N_rep,
+  p_MAE = GIMH_Gibbs_sim4[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+GIMH_Gibbs_results_df["Method"] <- rep("GIMH_Gibbs", length(iterations_vec))
+
+GIMH_Gibbs_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim4[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim4[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim4[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim4[[1]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_Gibbs_sim4[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_Gibbs_noRB_results_df <- GIMH_Gibbs_noRB_results_df + data.frame(
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim4[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim4[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim4[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim4[[i]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_Gibbs_sim4[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+GIMH_Gibbs_noRB_results_df["Method"] <- rep("GIMH_Gibbs_noRB", length(iterations_vec))
+
+```
+
+## GIMH (BDMH, $\upsilon = 0.75$)
+
+p - columns per iteration and 1 updates per column (as an update is a full row) - so same number of updates as BirthDeath Full Scan
+
+```{r GIMH_BirthDeath_Tempering0.75_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GIMH_BDMH_sim4 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+    GIMH_BDMH_sim4[[i]] <- GIMH_BDMH_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, tempering=0.75)
+    
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+  
+
+
+
+
+
+```
+
+```{r GIMH_BirthDeath_Tempering0.75_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GIMH_BDMH_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim4[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim4[[1]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_BDMH_sim4[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim4[[1]]$chain_p/N_rep,
+  p_MAE = GIMH_BDMH_sim4[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_BDMH_results_df <- GIMH_BDMH_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim4[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim4[[i]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_BDMH_sim4[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim4[[i]]$chain_p/N_rep,
+  p_MAE = GIMH_BDMH_sim4[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+GIMH_BDMH_results_df["Method"] <- rep("GIMH_BDMH", length(iterations_vec))
+
+GIMH_BDMH_noRB_results_df <- data.frame(
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim4[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim4[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_BDMH_sim4[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim4[[1]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_BDMH_sim4[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_BDMH_noRB_results_df <- GIMH_BDMH_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim4[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim4[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_BDMH_sim4[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim4[[i]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_BDMH_sim4[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+GIMH_BDMH_noRB_results_df["Method"] <- rep("GIMH_BDMH_noRB", length(iterations_vec))
+
+```
+
+
+## regression.pl
+
+```{r regression.pl_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+regression.pl_sim4 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+    regression.pl_sim4[[i]] <- regression.pl_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+    
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+
+
+```
+
+```{r regression.pl_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+regression.pl_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(regression.pl_sim4[[1]]$Time)/N_rep,
+  chain_Theta_MAE = regression.pl_sim4[[1]]$chain_Theta/N_rep,
+  Theta_MAE = regression.pl_sim4[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = regression.pl_sim4[[1]]$chain_p/N_rep,
+  p_MAE = regression.pl_sim4[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  regression.pl_results_df <- regression.pl_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(regression.pl_sim4[[i]]$Time)/N_rep,
+  chain_Theta_MAE = regression.pl_sim4[[i]]$chain_Theta/N_rep,
+  Theta_MAE = regression.pl_sim4[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = regression.pl_sim4[[i]]$chain_p/N_rep,
+  p_MAE = regression.pl_sim4[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+regression.pl_results_df["Method"] <- rep("regression.pl", length(iterations_vec))
+
+```
+
+## Comparison Serial
+
+```{r Comparison_Serial_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+# https://stackoverflow.com/questions/38722202/how-do-i-change-the-number-of-decimal-places-on-axis-labels-in-ggplot2
+#Our transformation function
+
+comparison_results_df <- rbind(Gibbs_results_df, BDMH_results_df, LIT_results_df)
+
+
+sim4_serial_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 17, 15)) +
+    scale_color_manual(values = c("lightgrey", "darkgrey", "black")) +
+   scale_x_continuous(trans = "log", labels=scaleFUNx) +
+   scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
+sim4_serial_omega
+
+sim4_serial_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 17, 15)) +
+    scale_color_manual(values = c("lightgrey", "darkgrey", "black")) +
+   scale_x_continuous(trans = "log", labels=scaleFUNx) +
+   scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
+sim4_serial_p
+
+
+```
+
+
+## Comparison Rao-Blackwellised
+
+
+```{r Comparison_RB_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+comparison_results_df <- rbind(Gibbs_results_df, Gibbs_noRB_results_df, BDMH_results_df, BDMH_noRB_results_df)
+
+
+sim4_RB_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 7, 16, 7)) +
+    scale_color_manual(values = c("darkgrey", "darkgrey", "black", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
+sim4_RB_omega
+
+sim4_RB_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 7, 16, 7)) +
+    scale_color_manual(values = c("darkgrey", "darkgrey", "black", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
+sim4_RB_p
+
+
+```
+
+## Comparison Final
+
+
+```{r Comparison_Final_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+#IGNORING THE SAMPLING OF OMEGAS FOR BDGRAPH.MPL#
+comparison_results_p_df <- rbind(ssgraph_results_df, bdgraph_results_df, bdgraph.mpl_results_p_df, Gibbs_results_df, BDMH_results_df, GIMH_Gibbs_results_df, regression.pl_results_df)
+
+
+#INCLUDING THE SAMPLING OF OMEGAS FOR BDGRAPH.MPL#
+comparison_results_p_omega_df <- rbind(ssgraph_results_df, bdgraph_results_df, bdgraph.mpl_results_p_omega_df, Gibbs_results_df, BDMH_results_df, GIMH_Gibbs_results_df, regression.pl_results_df)
+
+sim4_Final_omega <- ggplot(comparison_results_p_omega_df, aes(x=Time, y=chain_Theta_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(15, 16, 7, 17, 18, 4, 8)) +
+    scale_color_manual(values = c("black", "darkgrey", "red", "red", "blue", "darkgrey", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
+sim4_Final_omega
+
+sim4_Final_p <- ggplot(comparison_results_p_df, aes(x=Time, y=chain_p_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(15, 16, 7, 17, 18, 4, 8)) +
+    scale_color_manual(values = c("black", "darkgrey", "red", "red", "blue", "darkgrey", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
+sim4_Final_p
+
+
+
+
+```
+
+# Illconditioned   {.tabset}
+
+```{r data_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+graph_type <- "illconditioned"
+
+Th= diag(p)
+diag(Th)= 1.5
+Th[abs(col(Th) - row(Th))==1]= 0.9
+Th[abs(col(Th) - row(Th))==2]= 0.5
+if(p == 10){
+  Th[abs(col(Th) - row(Th))==3]= 0.43
+} else{
+  Th[abs(col(Th) - row(Th))==3]= 0.35
+}
+
+min(eigen(Th)$values)
+
+set.seed(4)
+
+Theta_sim <- list()
+data_y <- list()
+
+for(i in 1:N_rep){
+  Theta_sim[[i]] <- Th
+  data_y[[i]] <- scale(rmvnorm(n, sigma=solve(Th)), center=TRUE, scale=FALSE)
+}
+
+```
+
+## ssgraph
+
+```{r ssgraph_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+ssgraph_sim5 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  
+  ssgraph_sim5[[i]] <- ssgraph_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec_ssgraph, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, s_spike = 2e-02)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+
+```
+
+```{r ssgraph_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+ssgraph_results_df <- data.frame( 
+  iter = iterations_vec_ssgraph/N_rep,
+  Time = rowMeans(ssgraph_sim5[[1]]$Time)/N_rep,
+  chain_Theta_MAE = ssgraph_sim5[[1]]$chain_Theta/N_rep,
+  Theta_MAE = ssgraph_sim5[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = ssgraph_sim5[[1]]$chain_p/N_rep,
+  p_MAE = ssgraph_sim5[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  ssgraph_results_df <- ssgraph_results_df + data.frame( 
+  iter = iterations_vec_ssgraph/N_rep,
+  Time = rowMeans(ssgraph_sim5[[i]]$Time)/N_rep,
+  chain_Theta_MAE = ssgraph_sim5[[i]]$chain_Theta/N_rep,
+  Theta_MAE = ssgraph_sim5[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = ssgraph_sim5[[i]]$chain_p/N_rep,
+  p_MAE = ssgraph_sim5[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+ssgraph_results_df["Method"] <- rep("ssgraph", length(iterations_vec))
+
+```
+
+
+## bdgraph
+
+Each iteration of bdgraph only updates one element, should at least scale this by the number of rows
+
+```{r bdgraph_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph_sim5 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  bdgraph_sim5[[i]] <- bdgraph_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+  
+
+```
+
+```{r bdgraph_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph_sim5[[1]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph_sim5[[1]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph_sim5[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph_sim5[[1]]$chain_p/N_rep,
+  p_MAE = bdgraph_sim5[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  bdgraph_results_df <- bdgraph_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph_sim5[[i]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph_sim5[[i]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph_sim5[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph_sim5[[i]]$chain_p/N_rep,
+  p_MAE = bdgraph_sim5[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+bdgraph_results_df["Method"] <- rep("bdgraph", length(iterations_vec))
+
+```
+
+## bdgraph.mpl
+
+Just going from save=FALSE to save=TRUE increases the computation a lot
+
+```{r bdgraph.mpl_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph.mpl_sim5 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+
+  bdgraph.mpl_sim5[[i]] <- bdgraph.mpl_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+  
+
+
+
+
+```
+
+
+```{r bdgraph.mpl_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph.mpl_results_p_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph.mpl_sim5[[1]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim5[[1]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim5[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim5[[1]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim5[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  bdgraph.mpl_results_p_df <- bdgraph.mpl_results_p_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(bdgraph.mpl_sim5[[i]]$Time)/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim5[[i]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim5[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim5[[i]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim5[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+bdgraph.mpl_results_p_df["Method"] <- rep("bdgraph.mpl", length(iterations_vec))
+
+bdgraph.mpl_results_p_omega_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = (rowMeans(bdgraph.mpl_sim5[[1]]$Time) + rowMeans(bdgraph.mpl_sim5[[1]]$Time.omega))/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim5[[1]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim5[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim5[[1]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim5[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  bdgraph.mpl_results_p_omega_df <- bdgraph.mpl_results_p_omega_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = (rowMeans(bdgraph.mpl_sim5[[i]]$Time) + rowMeans(bdgraph.mpl_sim5[[i]]$Time.omega))/N_rep,
+  chain_Theta_MAE = bdgraph.mpl_sim5[[i]]$chain_Theta/N_rep,
+  Theta_MAE = bdgraph.mpl_sim5[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = bdgraph.mpl_sim5[[i]]$chain_p/N_rep,
+  p_MAE = bdgraph.mpl_sim5[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+bdgraph.mpl_results_p_omega_df["Method"] <- rep("bdgraph.mpl", length(iterations_vec))
+
+```
+
+## Gibbs
+
+```{r Gibbs_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+Gibbs_sim5 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  Gibbs_sim5[[i]] <- Gibbs_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+
+
+```
+
+```{r Gibbs_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+Gibbs_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim5[[1]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim5[[1]]$chain_Theta/N_rep,
+  Theta_MAE = Gibbs_sim5[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim5[[1]]$chain_p/N_rep,
+  p_MAE = Gibbs_sim5[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  Gibbs_results_df <- Gibbs_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim5[[i]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim5[[i]]$chain_Theta/N_rep,
+  Theta_MAE = Gibbs_sim5[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim5[[i]]$chain_p/N_rep,
+  p_MAE = Gibbs_sim5[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+Gibbs_results_df["Method"] <- rep("Gibbs", length(iterations_vec))
+
+Gibbs_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim5[[1]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim5[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = Gibbs_sim5[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim5[[1]]$chain_p_noRB/N_rep,
+  p_MAE = Gibbs_sim5[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  Gibbs_noRB_results_df <- Gibbs_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(Gibbs_sim5[[i]]$Time)/N_rep,
+  chain_Theta_MAE = Gibbs_sim5[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = Gibbs_sim5[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = Gibbs_sim5[[i]]$chain_p_noRB/N_rep,
+  p_MAE = Gibbs_sim5[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+Gibbs_noRB_results_df["Method"] <- rep("Gibbs_noRB", length(iterations_vec))
+
+```
+
+## BDMH
+
+```{r BDMH_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+BDMH_sim5 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  BDMH_sim5[[i]] <- BDMH_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+
+
+
+```
+
+```{r BDMH_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+BDMH_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim5[[1]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim5[[1]]$chain_Theta/N_rep,
+  Theta_MAE = BDMH_sim5[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = BDMH_sim5[[1]]$chain_p/N_rep,
+  p_MAE = BDMH_sim5[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  BDMH_results_df <- BDMH_results_df + data.frame(
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim5[[i]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim5[[i]]$chain_Theta/N_rep,
+  Theta_MAE = BDMH_sim5[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = BDMH_sim5[[i]]$chain_p/N_rep,
+  p_MAE = BDMH_sim5[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+BDMH_results_df["Method"] <- rep("BDMH", length(iterations_vec))
+
+BDMH_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim5[[1]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim5[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = BDMH_sim5[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = BDMH_sim5[[1]]$chain_p_noRB/N_rep,
+  p_MAE = BDMH_sim5[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  BDMH_noRB_results_df <- BDMH_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(BDMH_sim5[[i]]$Time)/N_rep,
+  chain_Theta_MAE = BDMH_sim5[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = BDMH_sim5[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = BDMH_sim5[[i]]$chain_p_noRB/N_rep,
+  p_MAE = BDMH_sim5[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+BDMH_noRB_results_df["Method"] <- rep("BDMH_noRB", length(iterations_vec))
+
+```
+
+## LIT
+
+```{r LIT_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+LIT_sim5 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+  LIT_sim5[[i]] <- LIT_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+
+
+
+```
+
+```{r LIT_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+LIT_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim5[[1]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim5[[1]]$chain_Theta/N_rep,
+  Theta_MAE = LIT_sim5[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = LIT_sim5[[1]]$chain_p/N_rep,
+  p_MAE = LIT_sim5[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  LIT_results_df <- LIT_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim5[[i]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim5[[i]]$chain_Theta/N_rep,
+  Theta_MAE = LIT_sim5[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = LIT_sim5[[i]]$chain_p/N_rep,
+  p_MAE = LIT_sim5[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+LIT_results_df["Method"] <- rep("LIT", length(iterations_vec))
+
+LIT_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim5[[1]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim5[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = LIT_sim5[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = LIT_sim5[[1]]$chain_p_noRB/N_rep,
+  p_MAE = LIT_sim5[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  LIT_noRB_results_df <- LIT_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(LIT_sim5[[i]]$Time)/N_rep,
+  chain_Theta_MAE = LIT_sim5[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = LIT_sim5[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = LIT_sim5[[i]]$chain_p_noRB/N_rep,
+  p_MAE = LIT_sim5[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+LIT_noRB_results_df["Method"] <- rep("LIT_noRB", length(iterations_vec))
+
+```
+
+
+## GIMH (Gibbs, $\upsilon = 0.75$)
+
+```{r GIMH_Gibbs_Tempering0.75_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GIMH_Gibbs_sim5 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+    GIMH_Gibbs_sim5[[i]] <- GIMH_Gibbs_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, tempering=0.75)
+    
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r GIMH_Gibbs_Tempering0.75_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GIMH_Gibbs_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim5[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim5[[1]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim5[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim5[[1]]$chain_p/N_rep,
+  p_MAE = GIMH_Gibbs_sim5[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_Gibbs_results_df <- GIMH_Gibbs_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim5[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim5[[i]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim5[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim5[[i]]$chain_p/N_rep,
+  p_MAE = GIMH_Gibbs_sim5[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+GIMH_Gibbs_results_df["Method"] <- rep("GIMH_Gibbs", length(iterations_vec))
+
+GIMH_Gibbs_noRB_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim5[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim5[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim5[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim5[[1]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_Gibbs_sim5[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_Gibbs_noRB_results_df <- GIMH_Gibbs_noRB_results_df + data.frame(
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_Gibbs_sim5[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_Gibbs_sim5[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_Gibbs_sim5[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_Gibbs_sim5[[i]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_Gibbs_sim5[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+GIMH_Gibbs_noRB_results_df["Method"] <- rep("GIMH_Gibbs_noRB", length(iterations_vec))
+
+```
+
+## GIMH (BDMH, $\upsilon = 0.75$)
+
+p - columns per iteration and 1 updates per column (as an update is a full row) - so same number of updates as BirthDeath Full Scan
+
+```{r GIMH_BirthDeath_Tempering0.75_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GIMH_BDMH_sim5 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+    GIMH_BDMH_sim5[[i]] <- GIMH_BDMH_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, tempering=0.75)
+    
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+  
+
+
+
+
+
+```
+
+```{r GIMH_BirthDeath_Tempering0.75_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GIMH_BDMH_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim5[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim5[[1]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_BDMH_sim5[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim5[[1]]$chain_p/N_rep,
+  p_MAE = GIMH_BDMH_sim5[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_BDMH_results_df <- GIMH_BDMH_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim5[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim5[[i]]$chain_Theta/N_rep,
+  Theta_MAE = GIMH_BDMH_sim5[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim5[[i]]$chain_p/N_rep,
+  p_MAE = GIMH_BDMH_sim5[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+GIMH_BDMH_results_df["Method"] <- rep("GIMH_BDMH", length(iterations_vec))
+
+GIMH_BDMH_noRB_results_df <- data.frame(
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim5[[1]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim5[[1]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_BDMH_sim5[[1]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim5[[1]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_BDMH_sim5[[1]]$p_MAE_noRB[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  GIMH_BDMH_noRB_results_df <- GIMH_BDMH_noRB_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(GIMH_BDMH_sim5[[i]]$Time)/N_rep,
+  chain_Theta_MAE = GIMH_BDMH_sim5[[i]]$chain_Theta_noRB/N_rep,
+  Theta_MAE = GIMH_BDMH_sim5[[i]]$Theta_MAE_noRB[,1]/N_rep,
+  chain_p_MAE = GIMH_BDMH_sim5[[i]]$chain_p_noRB/N_rep,
+  p_MAE = GIMH_BDMH_sim5[[i]]$p_MAE_noRB[,1]/N_rep
+)
+}
+
+GIMH_BDMH_noRB_results_df["Method"] <- rep("GIMH_BDMH_noRB", length(iterations_vec))
+
+```
+
+
+## regression.pl
+
+```{r regression.pl_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+regression.pl_sim5 <- list()
+
+for(i in 1:N_rep){
+  ## initalisation
+  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
+  Omegaini2 <- diag(1, p)
+  Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
+  
+    regression.pl_sim5[[i]] <- regression.pl_mixing(data_y[[i]], Theta_sim[[i]], iterations_vec, Omega_init1, Omega_init2, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+    
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+
+
+```
+
+```{r regression.pl_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+regression.pl_results_df <- data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(regression.pl_sim5[[1]]$Time)/N_rep,
+  chain_Theta_MAE = regression.pl_sim5[[1]]$chain_Theta/N_rep,
+  Theta_MAE = regression.pl_sim5[[1]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = regression.pl_sim5[[1]]$chain_p/N_rep,
+  p_MAE = regression.pl_sim5[[1]]$p_MAE[,1]/N_rep
+)
+
+for(i in 2:N_rep){
+  regression.pl_results_df <- regression.pl_results_df + data.frame( 
+  iter = iterations_vec/N_rep,
+  Time = rowMeans(regression.pl_sim5[[i]]$Time)/N_rep,
+  chain_Theta_MAE = regression.pl_sim5[[i]]$chain_Theta/N_rep,
+  Theta_MAE = regression.pl_sim5[[i]]$Theta_MAE[,1]/N_rep,
+  chain_p_MAE = regression.pl_sim5[[i]]$chain_p/N_rep,
+  p_MAE = regression.pl_sim5[[i]]$p_MAE[,1]/N_rep
+)
+}
+
+regression.pl_results_df["Method"] <- rep("regression.pl", length(iterations_vec))
+
+```
+
+## Comparison Serial
+
+```{r Comparison_Serial_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+# https://stackoverflow.com/questions/38722202/how-do-i-change-the-number-of-decimal-places-on-axis-labels-in-ggplot2
+#Our transformation function
+
+comparison_results_df <- rbind(Gibbs_results_df, BDMH_results_df, LIT_results_df)
+
+
+sim5_serial_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 17, 15)) +
+    scale_color_manual(values = c("lightgrey", "darkgrey", "black")) +
+   scale_x_continuous(trans = "log", labels=scaleFUNx) +
+   scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
+sim5_serial_omega
+
+sim5_serial_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 17, 15)) +
+    scale_color_manual(values = c("lightgrey", "darkgrey", "black")) +
+   scale_x_continuous(trans = "log", labels=scaleFUNx) +
+   scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
+sim5_serial_p
+
+
+```
+
+
+## Comparison Rao-Blackwellised
+
+
+```{r Comparison_RB_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+comparison_results_df <- rbind(Gibbs_results_df, Gibbs_noRB_results_df, BDMH_results_df, BDMH_noRB_results_df)
+
+
+sim5_RB_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 7, 16, 7)) +
+    scale_color_manual(values = c("darkgrey", "darkgrey", "black", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
+sim5_RB_omega
+
+sim5_RB_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(16, 7, 16, 7)) +
+    scale_color_manual(values = c("darkgrey", "darkgrey", "black", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
+sim5_RB_p
+
+
+```
+
+## Comparison Final
+
+
+```{r Comparison_Final_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+#IGNORING THE SAMPLING OF OMEGAS FOR BDGRAPH.MPL#
+comparison_results_p_df <- rbind(ssgraph_results_df, bdgraph_results_df, bdgraph.mpl_results_p_df, Gibbs_results_df, BDMH_results_df, GIMH_Gibbs_results_df, regression.pl_results_df)
+
+
+#INCLUDING THE SAMPLING OF OMEGAS FOR BDGRAPH.MPL#
+comparison_results_p_omega_df <- rbind(ssgraph_results_df, bdgraph_results_df, bdgraph.mpl_results_p_omega_df, Gibbs_results_df, BDMH_results_df, GIMH_Gibbs_results_df, regression.pl_results_df)
+
+sim5_Final_omega <- ggplot(comparison_results_p_omega_df, aes(x=Time, y=chain_Theta_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(15, 16, 7, 17, 18, 4, 8)) +
+    scale_color_manual(values = c("black", "darkgrey", "red", "red", "blue", "darkgrey", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
+sim5_Final_omega
+
+sim5_Final_p <- ggplot(comparison_results_p_df, aes(x=Time, y=chain_p_MAE, col = Method, shape = Method)) + 
+    geom_point() +
+    scale_shape_manual(values = c(15, 16, 7, 17, 18, 4, 8)) +
+    scale_color_manual(values = c("black", "darkgrey", "red", "red", "blue", "darkgrey", "black")) +
+    scale_x_continuous(trans = "log", labels=scaleFUNx) +
+    scale_y_continuous(trans = "log", labels=scaleFUNy) +
+    labs(
+  title = paste0("p = ", p, " n = ", nrow(data_y[[i]])),
+  y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
+sim5_Final_p
+
+
+
+
+```
+
+
+## Final Comparison 
+
+```{r Final_Comparison_p50_diag2, include = TRUE, echo = TRUE, eval = TRUE, cache = FALSE, dev = 'tikz', fig.width=5, fig.height = 12}
+
+wrap_plots(sim1_serial_omega  +
+               theme(plot.margin = margin(r = 1),
+                     axis.title.y = element_blank(),
+                     axis.title.x = element_blank()), 
+          sim1_serial_omega_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim2_serial_omega  +
+               theme(plot.margin = margin(r = 1),
+                     axis.title.y = element_blank(),
+                     axis.title.x = element_blank()), 
+          sim2_serial_omega_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim3_serial_omega  +
+               theme(plot.margin = margin(r = 1),
+                     axis.title.y = element_blank(),
+                     axis.title.x = element_blank()), 
+          sim3_serial_omega_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim4_serial_omega  +
+               theme(plot.margin = margin(r = 1),
+                     axis.title.y = element_blank(),
+                     axis.title.x = element_blank()), 
+          sim4_serial_omega_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim5_serial_omega  +
+               theme(axis.title.y = element_blank(), 
+                     plot.margin = margin(r = 1) ), 
+          sim5_serial_omega_n5p + 
+               theme(axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ), 
+          
+          nrow = 5, ncol = 2) + plot_layout(guides = "collect")  & theme(legend.position = 'bottom')
+
+wrap_plots(sim1_serial_p  +
+               theme(plot.margin = margin(r = 1),
+                     axis.title.y = element_blank(),
+                     axis.title.x = element_blank()), 
+          sim1_serial_p_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim2_serial_p  +
+               theme(plot.margin = margin(r = 1),
+                     axis.title.y = element_blank(),
+                     axis.title.x = element_blank()), 
+          sim2_serial_p_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim3_serial_p  +
+               theme(plot.margin = margin(r = 1),
+                     axis.title.y = element_blank(),
+                     axis.title.x = element_blank()), 
+          sim3_serial_p_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim4_serial_p  +
+               theme(plot.margin = margin(r = 1),
+                     axis.title.y = element_blank(),
+                     axis.title.x = element_blank()), 
+          sim4_serial_p_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim5_serial_p  +
+               theme(axis.title.y = element_blank(), 
+                     plot.margin = margin(r = 1) ), 
+          sim5_serial_p_n5p + 
+               theme(axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ), 
+          
+          nrow = 5, ncol = 2) + plot_layout(guides = "collect")  & theme(legend.position = 'bottom')
+
+wrap_plots(sim1_RB_omega + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(r = 1) ), 
+          sim1_RB_omega_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ), 
+          sim2_RB_omega + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(r = 1) ), 
+          sim2_RB_omega_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim3_RB_omega + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(r = 1) ), 
+          sim3_RB_omega_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim4_RB_omega + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(r = 1) ), 
+          sim4_RB_omega_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim5_RB_omega + 
+               theme(axis.title.y = element_blank(), 
+                     plot.margin = margin(r = 1) ), 
+          
+          sim5_RB_omega_n5p + 
+               theme(axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ), 
+          
+          nrow = 5, ncol = 2) + plot_layout(guides = "collect")  & theme(legend.position = 'bottom')
+
+wrap_plots(sim1_RB_p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(r = 1) ), 
+          sim1_RB_p_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ), 
+          sim2_RB_p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(r = 1) ), 
+          sim2_RB_p_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim3_RB_p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(r = 1) ), 
+          sim3_RB_p_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim4_RB_p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(r = 1) ), 
+          sim4_RB_p_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim5_RB_p + 
+               theme(axis.title.y = element_blank(), 
+                     plot.margin = margin(r = 1) ), 
+          sim5_RB_p_n5p + 
+               theme(axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ), 
+          
+          nrow = 5, ncol = 2) + plot_layout(guides = "collect")  & theme(legend.position = 'bottom')
+
+wrap_plots(sim1_Final_omega  +
+               theme(plot.margin = margin(r = 1),
+                     axis.title.x = element_blank(),
+                     axis.title.y = element_blank()), 
+          sim1_Final_omega_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          #sim2_Final_omega  +
+          #     theme(plot.margin = margin(r = 1),
+          #           axis.title.x = element_blank(),
+          #           axis.title.y = element_blank()), 
+          #sim2_Final_omega_n5p + 
+          #     theme(axis.title.x = element_blank(),
+          #           axis.title.y = element_blank(),
+          #           plot.margin = margin(l = 1) ),
+          sim3_Final_omega  +
+               theme(plot.margin = margin(r = 1),
+                     axis.title.x = element_blank(),
+                     axis.title.y = element_blank()), 
+          sim3_Final_omega_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim4_Final_omega  +
+               theme(plot.margin = margin(r = 1),
+                     axis.title.y = element_blank(),
+                     axis.title.x = element_blank()), 
+          sim4_Final_omega_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim5_Final_omega  +
+               theme(plot.margin = margin(r = 1),
+                     axis.title.y = element_blank() ), 
+          sim5_Final_omega_n5p + 
+               theme(axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ), 
+          
+          #nrow = 5, ncol = 4) + 
+          nrow = 4, ncol = 2) + 
+  plot_layout(guides = "collect")  & theme(legend.position = 'bottom')
+
+wrap_plots(sim1_Final_p + 
+               theme(axis.title.x = element_blank(),
+                     plot.margin = margin(r = 1),
+                     axis.title.y = element_blank() ), 
+          sim1_Final_p_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ), 
+          #sim2_Final_p + 
+          #     theme(axis.title.x = element_blank(),
+          #           axis.title.y = element_blank(),
+          #           plot.margin = margin(r = 1) ), 
+          #sim2_Final_p_n5p + 
+          #     theme(axis.title.x = element_blank(),
+          #           axis.title.y = element_blank(),
+          #           plot.margin = margin(l = 1) ),
+          sim3_Final_p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(r = 1) ), 
+          sim3_Final_p_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim4_Final_p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(r = 1) ), 
+          sim4_Final_p_n5p + 
+               theme(axis.title.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ),
+          sim5_Final_p + 
+               theme(plot.margin = margin(r = 1),
+                     axis.title.y = element_blank() ), 
+          sim5_Final_p_n5p + 
+               theme(axis.title.y = element_blank(),
+                     plot.margin = margin(l = 1) ), 
+          
+          #nrow = 5, ncol = 4) + 
+          nrow = 4, ncol = 2) + 
+  plot_layout(guides = "collect")  & theme(legend.position = 'bottom')
+
+
+```
+
+

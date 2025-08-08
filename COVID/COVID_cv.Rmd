@@ -1,0 +1,463 @@
+---
+title: "GGM_COVID_Example"
+author: "Jack Jewson and Deborah Sulem"
+date: "12 July 2024"
+output: html_document
+---
+
+Implement GGM models for the COVID data that we used in ''Graphical Modelling with External Network Data''
+
+10-fold cross-validation
+
+# Preamble {.tabset}
+
+## Packages
+
+Loading the required packages.
+
+```{r packages, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+library(mnormt)
+
+library(BDgraph)
+library(ssgraph)
+
+#remove.packages("mombf")
+#if (file.exists(".RData")) file.remove(".RData")
+#library(devtools)
+#install_github("davidrusi/mombf")
+
+
+library(mombf)
+
+library(readr)
+
+#library(mvtnorm)
+
+library(matrixStats)
+
+library(xtable)
+library(knitr)
+
+```
+
+### Parallel Cross-Validation
+
+```{r packages_cv, include=FALSE,echo=FALSE, eval=TRUE,cache=FALSE}
+library(foreach)
+library(doParallel)
+
+#setup parallel backend to use many processors
+cores=detectCores()
+cores <- 1
+cl <- makeCluster(cores) 
+registerDoParallel(cl)
+
+```
+
+## Functions
+
+```{r functions, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+source("../functions/priorElicitation.R")
+source("../functions/general_functions.R")
+```
+
+# COVID Data
+
+## Data Loading
+
+```{r data_load, include=TRUE,echo=TRUE, eval=TRUE,cache=TRUE}
+
+covid1 <- as.matrix(read_csv("COVID_332_meta_pruned.csv"))[,-1]
+
+n <- nrow(covid1)
+p <- ncol(covid1)
+N <- 1
+
+#subset to test
+p <- 10
+covid1 <- covid1[,1:p]
+
+covid1_scaled <- scale(covid1, center = FALSE, scale = TRUE)
+
+```
+
+## Training and Testing
+
+```{r training_testing, include=TRUE,echo=TRUE, eval=TRUE,cache=TRUE}
+N_folds <- 10
+
+n <- round(nrow(covid1_scaled)/N_folds)
+
+train_data <- list()
+test_data <- list()
+
+set.seed(1234)
+covid_seq_shuffle <- sample(seq_len(nrow(covid1_scaled)), nrow(covid1_scaled), replace = FALSE)
+
+for (i in 1:(N_folds - 1)){
+  picked <- (i - 1)*n + 1:n 
+  train_data[[i]] <- covid1_scaled[-covid_seq_shuffle[picked], ]
+  test_data[[i]]  <- covid1_scaled[covid_seq_shuffle[picked], ]
+}
+not_picked <- 1:((N_folds - 1)*n) 
+train_data[[N_folds]] <- covid1_scaled[covid_seq_shuffle[not_picked], ]
+test_data[[N_folds]]  <- covid1_scaled[-covid_seq_shuffle[not_picked], ]
+  
+  
+N <- N_folds  
+```
+
+## Prior Elicitation
+
+```{r prior_elicitation_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+w_slab_set <- 2/(p-1)
+
+#get_set_diag_all <- set_diag_all(p, lower_bound = 1, prob = 0.95)
+get_set_diag_all <- set_diag_one(lower_bound = 1, prob = 0.99)
+
+lambda_set <- get_set_diag_all
+lambda_set
+
+#get_s_slab_all <- gridsearch_probPD_diagExp_SSGaussian(N = 5000, p, w_slab_set, s_slab_grid = seq(0.2, 2, length.out = 20), lambda = lambda_set, probPD = 0.95, truncDiag = TRUE, verbose = FALSE)
+
+#s_slab_set <- get_s_slab_all$s_slab
+#s_slab_set
+
+N <- 5000
+s_slab_grid <- seq(0.2, 2, length.out = 20)
+lambda <- lambda_set
+probPD <- 0.95
+truncDiag <- TRUE
+verbose <- FALSE
+
+N_try <- length(s_slab_grid)
+probPD_eval <- rep(NA, N_try)
+for(i in 1:N_try){
+  probPD_eval[i] <- probPD_diagExp_SSGaussian(N, p, w_slab_set, s_slab = s_slab_grid[i], lambda_set, truncDiag, verbose)
+  if(verbose){
+    cat("\r", "try", i, "done", "\n")
+  }
+    
+}
+
+s_slab_set <- s_slab_grid[which.min(abs(probPD_eval - probPD))]
+s_slab_set
+
+
+```
+
+```{r prior_elicitation2_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+plot(s_slab_grid, abs(probPD_eval - probPD))
+
+```
+
+## Prior Specification 
+
+```{r prior_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+prior_params_covid <- list("s_slab" = s_slab_set,
+                        "w_slab" = w_slab_set,
+                        "lambda" = lambda_set
+)
+
+N <- N_folds  
+
+```
+
+## Iterations
+
+Each iteration of ssgraph does every row and every column
+
+```{r iterations_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+iterations <- 20000
+warmup <- 5000
+
+```
+
+Run each for long enough so that it looks like they have converged
+
+## Initalisation
+
+```{r init_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+Omegaini <- mombf:::initialEstimateGGM(covid1_scaled, Omegaini='glasso-bic')
+Omega_init <- (as.matrix(Omegaini) + t(as.matrix(Omegaini)))/2
+Sigma_init <- pd.solve(Omega_init)
+
+```
+
+## GLASSO_BIC
+
+```{r GLASSO_BIC_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GLASSO_BIC_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("mombf", "matrixStats")) %dopar% {
+
+  Omega_hat <- as.matrix(OmegaHat_GLASSO(covid1_scaled, criteria='glasso-bic', maxiter=5))
+
+  Omega_hat <- (Omega_hat + t(Omega_hat))/2
+}
+
+
+
+```
+
+```{r GLASSO_BIC_covid_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GLASSO_BIC_out_sample_logllh <- rep(NA, N)
+GLASSO_BIC_out_sample_regression_MSE <- rep(NA, N)
+GLASSO_BIC_out_sample_R2 <- rep(NA, N)
+for(j in 1:N){
+  n_test <- nrow(test_data[[j]])
+  GLASSO_BIC_out_sample_regression_MSE[j] <- regression_MSE_eval(y_test = test_data[[j]], Omega_hat = GLASSO_BIC_sim_results[, ((j-1)*p + 1):(j*p)])
+  GLASSO_BIC_out_sample_logllh[j] <-  1/n_test*sum(LaplacesDemon::dmvnp(test_data[[j]], mu = rep(0, p), Omega = GLASSO_BIC_sim_results[, ((j-1)*p + 1):(j*p)], log = TRUE))
+  GLASSO_BIC_out_sample_R2[j] <- regression_R2_eval(y_test = test_data[[j]], Omega_hat = GLASSO_BIC_sim_results[, ((j-1)*p + 1):(j*p)])
+}
+
+mean(GLASSO_BIC_out_sample_logllh)
+GLASSO_BIC_out_sample_logllh
+
+mean(GLASSO_BIC_out_sample_regression_MSE)
+GLASSO_BIC_out_sample_regression_MSE
+
+mean(GLASSO_BIC_out_sample_R2)
+GLASSO_BIC_out_sample_R2
+
+```
+
+## GLASSO_EBIC
+
+```{r GLASSO_EBIC_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GLASSO_EBIC_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("mombf", "matrixStats")) %dopar% {
+
+  Omega_hat <- as.matrix(OmegaHat_GLASSO(covid1_scaled, criteria='glasso-ebic', maxiter=5))
+
+  Omega_hat <- (Omega_hat + t(Omega_hat))/2
+
+  
+}
+
+
+
+```
+
+```{r GLASSO_EBIC_covid_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GLASSO_EBIC_out_sample_logllh <- rep(NA, N)
+GLASSO_EBIC_out_sample_regression_MSE <- rep(NA, N)
+GLASSO_EBIC_out_sample_R2 <- rep(NA, N)
+for(j in 1:N){
+  n_test <- nrow(test_data[[j]])
+  GLASSO_EBIC_out_sample_regression_MSE[j] <- regression_MSE_eval(y_test = test_data[[j]], Omega_hat = GLASSO_EBIC_sim_results[, ((j-1)*p + 1):(j*p)])
+  GLASSO_EBIC_out_sample_logllh[j] <-  1/n_test*sum(LaplacesDemon::dmvnp(test_data[[j]], mu = rep(0, p), Omega = GLASSO_EBIC_sim_results[, ((j-1)*p + 1):(j*p)], log = TRUE))
+  GLASSO_EBIC_out_sample_R2[j] <- regression_R2_eval(y_test = test_data[[j]], Omega_hat = GLASSO_EBIC_sim_results[, ((j-1)*p + 1):(j*p)])
+}
+
+mean(GLASSO_EBIC_out_sample_logllh)
+GLASSO_EBIC_out_sample_logllh
+
+mean(GLASSO_EBIC_out_sample_regression_MSE)
+GLASSO_EBIC_out_sample_regression_MSE
+
+mean(GLASSO_EBIC_out_sample_R2)
+GLASSO_EBIC_out_sample_R2
+
+```
+
+
+## Gibbs
+
+```{r Gibbs_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+updates_per_iter <- p
+updates_per_column <- p
+
+Gibbs_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("mombf", "matrixStats")) %dopar% {
+
+  fit.Gibbs <- modelSelectionGGM(train_data[[j]], sampler='Gibbs', Omegaini=Omega_init, niter=iterations+warmup, burnin=warmup, scale=FALSE, global_proposal='none', updates_per_iter = updates_per_iter, updates_per_column = updates_per_column, priorCoef=normalidprior(prior_params_covid$s_slab^2), priorModel=modelbinomprior(prior_params_covid$w_slab), priorDiag=exponentialprior(lambda=prior_params_covid$lambda))
+  
+  Omega_hat <- icov(fit.Gibbs)
+  
+}
+
+
+
+```
+
+```{r Gibbs_covid_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+Gibbs_out_sample_logllh <- rep(NA, N)
+Gibbs_out_sample_regression_MSE <- rep(NA, N)
+Gibbs_out_sample_R2 <- rep(NA, N)
+for(j in 1:N){
+  n_test <- nrow(test_data[[j]])
+  Gibbs_out_sample_regression_MSE[j] <- regression_MSE_eval(y_test = test_data[[j]], Omega_hat = Gibbs_sim_results[, ((j-1)*p + 1):(j*p)])
+  Gibbs_out_sample_logllh[j] <-  1/n_test*sum(LaplacesDemon::dmvnp(test_data[[j]], mu = rep(0, p), Omega = Gibbs_sim_results[, ((j-1)*p + 1):(j*p)], log = TRUE))
+  Gibbs_out_sample_R2[j] <- regression_R2_eval(y_test = test_data[[j]], Omega_hat = Gibbs_sim_results[, ((j-1)*p + 1):(j*p)])
+}
+
+mean(Gibbs_out_sample_logllh)
+Gibbs_out_sample_logllh
+
+mean(Gibbs_out_sample_regression_MSE)
+Gibbs_out_sample_regression_MSE
+
+mean(Gibbs_out_sample_R2)
+Gibbs_out_sample_R2
+
+```
+
+## GIMH
+
+```{r GIMH_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+updates_per_iter <- p
+updates_per_column <- ceiling(sqrt(p))
+prob_global <- 1 # so every column udpate is a full row form the parallel
+tempering <- 0.75
+truncratio <- -1. # means no truncation?
+
+GIMH_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("mombf", "matrixStats")) %dopar% {
+
+  fit.GIMH <- modelSelectionGGM(train_data[[j]], sampler='Gibbs', Omegaini=Omega_init, niter=iterations+warmup, burnin=warmup, scale=FALSE, global_proposal='regression', updates_per_iter = updates_per_iter, updates_per_column = updates_per_column, priorCoef=normalidprior(prior_params_covid$s_slab^2), priorModel=modelbinomprior(prior_params_covid$w_slab), priorDiag=exponentialprior(lambda=prior_params_covid$lambda), prob_global=prob_global, tempering=tempering, truncratio=truncratio)
+  
+  Omega_hat <- icov(fit.GIMH)
+   
+
+  
+}
+
+
+
+```
+
+```{r GIMH_covid_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GIMH_out_sample_logllh <- rep(NA, N)
+GIMH_out_sample_regression_MSE <- rep(NA, N)
+GIMH_out_sample_R2 <- rep(NA, N)
+for(j in 1:N){
+  n_test <- nrow(test_data[[j]])
+  GIMH_out_sample_regression_MSE[j] <- regression_MSE_eval(y_test = test_data[[j]], Omega_hat = GIMH_sim_results[, ((j-1)*p + 1):(j*p)])
+  GIMH_out_sample_logllh[j] <-  1/n_test*sum(LaplacesDemon::dmvnp(test_data[[j]], mu = rep(0, p), Omega = GIMH_sim_results[, ((j-1)*p + 1):(j*p)], log = TRUE))
+  GIMH_out_sample_R2[j] <- regression_R2_eval(y_test = test_data[[j]], Omega_hat = GIMH_sim_results[, ((j-1)*p + 1):(j*p)])
+}
+
+mean(GIMH_out_sample_logllh)
+GIMH_out_sample_logllh
+
+mean(GIMH_out_sample_regression_MSE)
+GIMH_out_sample_regression_MSE
+
+mean(GIMH_out_sample_R2)
+GIMH_out_sample_R2
+
+```
+
+## bdgraph.mpl
+
+```{r bdgraph.mpl_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+jumps <- ceiling(sqrt(p))
+
+iter_multplier <- ceiling(sqrt(p))
+
+bdgraph.mpl_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("mombf", "mvtnorm", "BDgraph", "matrixStats")) %dopar% {
+  
+  n_train <- nrow(train_data[[j]])
+  S <- t(train_data[[j]])%*%train_data[[j]]
+
+  fit.bdgraph.mpl <- bdgraph.mpl(train_data[[j]], method="ggm", iter= iter_multplier*(iterations+warmup), burnin = iter_multplier*warmup, g.prior= prior_params_covid$w_slab, save=TRUE, verbose=TRUE, g.start = Omega_init!=0, jump = 1)
+  fit.bdgraph.mpl$K_hat <- bdgraph.mpl_sampleOmega(fit.bdgraph.mpl, iter=iterations, p, S, n_train, store_samples = FALSE)$Omega_hat
+  
+  Omega_hat <- 1/2*(fit.bdgraph.mpl$K_hat + t(fit.bdgraph.mpl$K_hat))
+  
+}
+
+```
+
+```{r bdgraph.mpl_covid_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph.mpl_out_sample_logllh <- rep(NA, N)
+bdgraph.mpl_out_sample_regression_MSE <- rep(NA, N)
+bdgraph.mpl_out_sample_R2 <- rep(NA, N)
+for(j in 1:N){
+  n_test <- nrow(test_data[[j]])
+    bdgraph.mpl_out_sample_regression_MSE[j] <- regression_MSE_eval(y_test = test_data[[j]], Omega_hat = bdgraph.mpl_sim_results[, ((j-1)*p + 1):(j*p)])
+  bdgraph.mpl_out_sample_logllh[j] <-  1/n_test*sum(LaplacesDemon::dmvnp(test_data[[j]], mu = rep(0, p), Omega = bdgraph.mpl_sim_results[, ((j-1)*p + 1):(j*p)], log = TRUE))
+  bdgraph.mpl_out_sample_R2[j] <- regression_R2_eval(y_test = test_data[[j]], Omega_hat = bdgraph.mpl_sim_results[, ((j-1)*p + 1):(j*p)])
+}
+
+mean(bdgraph.mpl_out_sample_logllh)
+bdgraph.mpl_out_sample_logllh
+
+mean(bdgraph.mpl_out_sample_regression_MSE)
+bdgraph.mpl_out_sample_regression_MSE
+
+mean(bdgraph.mpl_out_sample_R2)
+bdgraph.mpl_out_sample_R2
+
+
+```
+
+## regression.pl
+
+```{r regression.pl_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+
+regression.pl_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("mombf", "mvtnorm", "BDgraph", "matrixStats", "Matrix")) %dopar% {
+  
+  n_train <- nrow(train_data[[j]])
+  S <- t(train_data[[j]])%*%train_data[[j]]
+  
+  fit.regression.pl <- regression.pl_GGM(Y=train_data[[j]], iter=iterations+warmup, burnin = warmup, w_slab=prior_params_covid$w_slab, s_slab=prior_params_covid$s_slab, lambda=prior_params_covid$lambda, Omega_init=Omega_init, store_samples = FALSE)
+  
+  Omega_hat <- matrix(nearPD(fit.regression.pl$Omega_hat)$mat, nrow = p, ncol = p)
+  
+}
+
+```
+
+```{r regression.pl_covid_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+regression.pl_out_sample_logllh <- rep(NA, N)
+regression.pl_out_sample_regression_MSE <- rep(NA, N)
+regression.pl_out_sample_R2 <- rep(NA, N)
+for(j in 1:N){
+  n_test <- nrow(test_data[[j]])
+  regression.pl_out_sample_regression_MSE[j] <- regression_MSE_eval(y_test = test_data[[j]], Omega_hat = regression.pl_sim_results[, ((j-1)*p + 1):(j*p)])
+  regression.pl_out_sample_logllh[j] <-  1/n_test*sum(LaplacesDemon::dmvnp(test_data[[j]], mu = rep(0, p), Omega = regression.pl_sim_results[, ((j-1)*p + 1):(j*p)], log = TRUE))
+  regression.pl_out_sample_R2[j] <- regression_R2_eval(y_test = test_data[[j]], Omega_hat = regression.pl_sim_results[, ((j-1)*p + 1):(j*p)])
+}
+
+mean(regression.pl_out_sample_logllh)
+regression.pl_out_sample_logllh
+
+mean(regression.pl_out_sample_regression_MSE)
+regression.pl_out_sample_regression_MSE
+
+mean(regression.pl_out_sample_R2)
+regression.pl_out_sample_R2
+
+```
+
+## Comparison 
+
+
+```{r covid_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+results_df <- data.frame(Method = c("GLASSO-BIC", "GLASSO-EBIC", "Local-Gibbs", "Global-Gibbs_T0.75", "bdgraph.mpl", "regression.pl"),
+                         cv_llh = c(mean(GLASSO_BIC_out_sample_logllh), mean(GLASSO_EBIC_out_sample_logllh), mean(Gibbs_out_sample_logllh), mean(GIMH_out_sample_logllh), mean(bdgraph.mpl_out_sample_logllh), mean(regression.pl_out_sample_logllh)),
+                         cv_MSE = c(mean(GLASSO_BIC_out_sample_regression_MSE), mean(GLASSO_EBIC_out_sample_regression_MSE), mean(Gibbs_out_sample_regression_MSE), mean(GIMH_out_sample_regression_MSE), mean(bdgraph.mpl_out_sample_regression_MSE), mean(regression.pl_out_sample_regression_MSE)),
+                         cv_R2 = c(mean(GLASSO_BIC_out_sample_R2), mean(GLASSO_EBIC_out_sample_R2), mean(Gibbs_out_sample_R2), mean(GIMH_out_sample_R2), mean(bdgraph.mpl_out_sample_R2), mean(regression.pl_out_sample_R2))
+                         )
+
+xtable(results_df, digits=3)
+
+kable(results_df)
+
+
+```
+

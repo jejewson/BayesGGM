@@ -1,0 +1,832 @@
+---
+title: "GGM_COVID_Example"
+author: "Jack Jewson and Deborah Sulem"
+date: "12 July 2024"
+output: html_document
+---
+
+Implement GGM models for the COVID data that we used in ''Graphical Modelling with External Network Data''
+
+
+# Preamble {.tabset}
+
+## Packages
+
+Loading the required packages.
+
+```{r packages, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+library(mnormt)
+
+library(BDgraph)
+library(ssgraph)
+
+#remove.packages("mombf")
+#if (file.exists(".RData")) file.remove(".RData")
+#library(devtools)
+#install_github("davidrusi/mombf")
+
+library(mombf)
+library(readr)
+
+
+library(xtable)
+library(knitr)
+
+## MAPS
+library(tidyverse)
+
+library(ggmap)   # spatial tools to interact with ggplot2
+library(ggplot2) # tidyverse: actually more basic than base R plotting
+library(usmap) # they updated this package
+library(sf)
+
+```
+
+## Functions
+
+```{r functions, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+source("../functions/priorElicitation.R")
+source("../functions/general_functions.R")
+```
+
+## COVID Data
+
+
+# Data Loading
+
+```{r data_load, include=TRUE,echo=TRUE, eval=TRUE,cache=TRUE}
+
+covid1 <- as.matrix(read_csv("COVID_332_meta_pruned.csv"))[,-1]
+
+n <- nrow(covid1)
+p <- ncol(covid1)
+N <- 1
+
+#subset to test
+p <- 10
+covid1 <- covid1[,1:p]
+
+covid1_scaled <- scale(covid1, center = FALSE, scale = TRUE)
+
+```
+
+## Prior Specification 
+
+```{r prior_elicitation_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+w_slab_set <- 2/(p-1)
+
+get_set_diag_all <- set_diag_one(lower_bound = 1, prob = 0.99)
+
+lambda_set <- get_set_diag_all
+lambda_set
+
+N <- 5000
+s_slab_grid <- seq(0.2, 2, length.out = 20)
+#s_slab_grid <- seq(0.75, 3, length.out = 20)
+#s_slab_grid <- seq(3, 6, length.out = 20)
+lambda <- lambda_set
+probPD <- 0.95
+truncDiag <- TRUE
+verbose <- FALSE
+
+N_try <- length(s_slab_grid)
+probPD_eval <- rep(NA, N_try)
+for(i in 1:N_try){
+  probPD_eval[i] <- probPD_diagExp_SSGaussian(N, p, w_slab_set, s_slab = s_slab_grid[i], lambda_set, truncDiag, verbose)
+  if(verbose){
+    cat("\r", "try", i, "done", "\n")
+  }
+    
+}
+
+s_slab_set <- s_slab_grid[which.min(abs(probPD_eval - probPD))]
+s_slab_set
+
+```
+
+```{r prior_elicitation_covid2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+plot(s_slab_grid, abs(probPD_eval - probPD))
+
+```
+
+```{r prior_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+prior_params_covid <- list("s_slab" = s_slab_set,
+                        "w_slab" = w_slab_set,
+                        "lambda" = lambda_set
+)
+
+```
+
+## Iterations
+
+```{r iterations_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+warmup <- 5000
+iterations <- 20000
+```
+
+## Initalisation
+
+```{r init_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+Omegaini <- mombf:::initialEstimateGGM(covid1_scaled, Omegaini='glasso-ebic')
+Omega_init <- (as.matrix(Omegaini) + t(as.matrix(Omegaini)))/2
+Sigma_init <- pd.solve(Omega_init)
+
+```
+
+## GLASSO_BIC
+
+```{r GLASSO_BIC_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+timer_GLASSO_BIC.start <- Sys.time()
+GLASSO_BIC_Omega_hat <- as.matrix(OmegaHat_GLASSO(covid1_scaled, criteria='glasso-bic', maxiter=5))
+timer_GLASSO_BIC.end <- Sys.time()
+
+GLASSO_BIC_Omega_hat <- round((GLASSO_BIC_Omega_hat + t(GLASSO_BIC_Omega_hat))/2, 5)
+
+GLASSO_BIC_graph <- matrix(GLASSO_BIC_Omega_hat != 0, nrow = p, ncol = p)
+
+```
+
+```{r GLASSO_BIC_covid_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+(sum(GLASSO_BIC_graph - diag(1, p)))/2
+
+```
+
+## GLASSO_EBIC
+
+```{r GLASSO_EBIC_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+timer_GLASSO_EBIC.start <- Sys.time()
+GLASSO_EBIC_Omega_hat <- as.matrix(OmegaHat_GLASSO(covid1_scaled, criteria='glasso-ebic', maxiter=5))
+timer_GLASSO_EBIC.end <- Sys.time()
+
+GLASSO_EBIC_Omega_hat <- round((GLASSO_EBIC_Omega_hat + t(GLASSO_EBIC_Omega_hat))/2, 5)
+
+GLASSO_EBIC_graph <- matrix(GLASSO_EBIC_Omega_hat != 0, nrow = p, ncol = p)
+
+```
+
+```{r GLASSO_EBIC_covid_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+(sum(GLASSO_EBIC_graph - diag(1, p)))/2
+
+```
+
+## Gibbs
+
+```{r Gibbs, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+updates_per_iter <- p
+updates_per_column <- p
+
+
+timer_Gibbs.start <- Sys.time()
+fit.Gibbs <- modelSelectionGGM(covid1_scaled, sampler='Gibbs', Omegaini=Omega_init, niter=(iterations+warmup), burnin=warmup, scale=FALSE, global_proposal='none', updates_per_iter = updates_per_iter, updates_per_column = updates_per_column, priorCoef=normalidprior(prior_params_covid$s_slab^2), priorModel=modelbinomprior(prior_params_covid$w_slab), priorDiag=exponentialprior(lambda=prior_params_covid$lambda))
+timer_Gibbs.end <- Sys.time()
+
+## Mixing 
+traceplot.fit.Gibbs <- traceplot.mombf(fit.Gibbs, p)
+
+plotcoda.fit.Gibbs <- plotcoda.mombf(fit.Gibbs, p)
+
+## Inference
+b <- coef(fit.Gibbs)
+fit.Gibbs$p_links <- matrix(NA, nrow = p, ncol = p)
+fit.Gibbs$p_links[upper.tri(fit.Gibbs$p_links, diag = TRUE)] <- b[,6]
+
+
+Gibbs_graph_0.95 <- bayes_graph_select(fit.Gibbs$p_links, thresh = 0.95, FDR = TRUE)
+    
+```
+
+```{r Gibbs_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+difftime(timer_Gibbs.end, timer_Gibbs.start, units = "secs")
+
+## Convergence Diagnostics
+
+
+plot(1:length(traceplot.fit.Gibbs), traceplot.fit.Gibbs, type = "l", col = "blue", xlab = "Iteration", ylab = "Graph size", main = "Trace of graph size")
+
+
+plot(1:nrow(plotcoda.fit.Gibbs), plotcoda.fit.Gibbs[,1], type = "l", col = "blue", xlab = "Iteration", ylab = "Posterior link probability", ylim = range(plotcoda.fit.Gibbs), main = "Trace of Posterior Probability of Link")
+for(i in 2:ncol(plotcoda.fit.Gibbs)){
+  points(1:nrow(plotcoda.fit.Gibbs), plotcoda.fit.Gibbs[,i], type = "l", col = "blue")
+}
+
+sum(Gibbs_graph_0.95[upper.tri(Gibbs_graph_0.95, diag = FALSE)])
+
+```
+
+```{r Gibbs_covid_diag_trace, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+fit.Gibbs_traceplot <- traceplot_llp.mombf(y = covid1_scaled, mombf.object = fit.Gibbs, p, thinning = 100)
+
+plot(1:length(fit.Gibbs_traceplot), fit.Gibbs_traceplot, xlab="Iterations", ylab = "log_target", type = "l")
+
+max(fit.Gibbs_traceplot)
+mean(fit.Gibbs_traceplot)
+
+```
+
+### Map plot
+
+```{r locations_Map_Plot, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
+
+## nodes, import the latitude and lon of each  county
+nodes <- read_csv("nodes118.csv")[, 2:6]
+
+nodes$lon[49]
+nodes$lat[49]
+
+nodes[49, 2] <- -158.2019740 ## replace the lat and lon of Honolulu(Hawaii) by INTPTLAT and INTPTLON
+nodes[49, 3] <-  21.4613654
+
+myfinal_daily <- read.csv(file = paste("COVID_332_counties_meta_agg_pruned", ".csv", sep = ""))
+
+
+length(unique(myfinal_daily$Date)) # 679
+length(unique(myfinal_daily$ID_metacounty)) # 629 # 496
+
+id_metacounties <- unique(myfinal_daily$ID_metacounty)
+
+nodes_new <- data.frame("id" = id_metacounties)
+nodes_new$lon <- rep(NA, length(id_metacounties))
+nodes_new$lat <- rep(NA, length(id_metacounties))
+for(i in 1:length(id_metacounties)){
+  nodes_new$lon[i] <- unique(myfinal_daily$Long_[(which(myfinal_daily$ID_metacounty == id_metacounties[i]))])
+  nodes_new$lat[i] <- unique(myfinal_daily$Lat[(which(myfinal_daily$ID_metacounty == id_metacounties[i]))])
+}
+
+unique(myfinal_daily$ID_metacounty[which(myfinal_daily$State == "hawaii")])
+
+nodes_new$lon[which(nodes_new$id==80)]
+nodes_new$lat[which(nodes_new$id==80)]
+
+nodes_new$lon[which(nodes_new$id==81)]
+nodes_new$lat[which(nodes_new$id==81)]
+
+min(nodes_new$lon) 
+min(nodes_new$lat) 
+
+# WORKING WITH R INDEX NOT PYTHON
+nodes_new$id <- nodes_new$id + 1
+
+rm(myfinal_daily)
+rm(nodes)#cause we now have new ones
+
+```
+
+
+```{r Gibbs_MAP095_prep, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
+
+# ## edges connection for GLASSO
+par_corr_GLASSO <- Gibbs_graph_0.95
+m1 <- par_corr_GLASSO
+
+colnames(m1) <- paste0(1:p)
+rownames(m1) <- paste0(1:p)
+
+m1 <-data.frame(from =colnames(m1)[col(m1)[lower.tri(m1)]], 
+                to =rownames(m1)[row(m1)[lower.tri(m1)]], 
+                corr=m1[lower.tri(m1)])            ## convert partial correlation matrix to column
+
+edges_Gibbs_95 <- m1[m1$corr != 0, ]      ## only keep those rows that corr != 0
+
+
+edges_Gibbs_95 <- edges_Gibbs_95 %>%  
+  mutate(from = as.numeric(from), to = as.numeric(to))   ##convert the type to be consistant with "nodes"
+
+edges_for_plot_95 <- edges_Gibbs_95 %>%
+  inner_join(nodes_new %>% dplyr::select(id, lon, lat), by = c('from' = 'id')) %>%
+  rename(x = lon, y = lat) %>%
+  inner_join(nodes_new %>% dplyr::select(id, lon, lat), by = c('to' = 'id')) %>%
+  rename(xend = lon, yend = lat)           ## define the start(from(x,y)) and end(to(xend,yend)) point for each edges
+
+```
+
+```{r Gibbs_MAP095, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
+
+## plot of GLASSO
+##################################
+## transform nodes and edges
+#nodes_ordered <- nodes[, c(2, 3, 4, 5, 1)]
+nodes_ordered <- nodes_new[, c(2, 3, 1)]
+
+
+# Transforming node coordinates using usmap_transform function
+nodes_transformed <- usmap_transform(nodes_ordered, input_names = c("lon", "lat"))
+
+# Transforming edge coordinates using usmap_transform function for both start and end points
+edges_for_plot_transformed_95 <- usmap_transform(edges_for_plot_95, input_names = c("x", "y"))   %>% arrange(to) %>% arrange(from)
+edges_for_plot_transformed2_95 <- usmap_transform(edges_for_plot_95, input_names = c("xend", "yend"))  %>% arrange(to) %>% arrange(from)
+
+# Merging transformed edge coordinates into a single data frame
+merged_data_sf_95 <- cbind(edges_for_plot_transformed_95, edges_for_plot_transformed2_95)
+
+
+plot_usmap(fill = "white", color = "#2b2b2b", alpha = 0.25) +
+  geom_segment(data = merged_data_sf_95, 
+               aes(x = st_coordinates(geometry)[,1], xend = st_coordinates(geometry.1)[,1],
+                   y = st_coordinates(geometry)[,2], yend = st_coordinates(geometry.1)[,2]),
+               color = "red", size = 0.35, alpha = 0.5) +
+  geom_point(data = nodes_transformed, aes(x = st_coordinates(geometry)[,1], y =st_coordinates(geometry)[,2]),
+          fill = alpha("#b30000", 1/2), color = "#b30000", shape=21) +
+  labs(title = "The Edges Estimated from Serial-Gibbs and US Map",
+       #subtitle = "",
+       size = "Magnitude") +
+  theme(legend.position = "right", plot.margin = unit(c(0.25,0,0,0), "cm"))
+#top, right, bottom, left
+
+
+```
+
+## GIMH Gibbs Tempering 
+
+```{r GIMH_Tempering_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+updates_per_iter <- p
+updates_per_column <- ceiling(sqrt(p))
+prob_global <- 1 # so every column udpate is a full row form the parallel
+tempering <- 0.75
+truncratio <- -1. # means no truncation?
+
+
+timer_GIMH.start <- Sys.time()
+fit.GIMH <- modelSelectionGGM(covid1_scaled, sampler = "Gibbs", Omegaini=Omega_init, niter=iterations+warmup, burnin=warmup, scale=FALSE, global_proposal='regression', updates_per_iter = updates_per_iter, updates_per_column = updates_per_column, priorCoef=normalidprior(prior_params_covid$s_slab^2), priorModel=modelbinomprior(prior_params_covid$w_slab), priorDiag=exponentialprior(lambda=prior_params_covid$lambda), prob_global=prob_global, tempering=tempering, truncratio=truncratio)
+timer_GIMH.end <- Sys.time()
+    
+b <- coef(fit.GIMH)
+fit.GIMH$p_links <- matrix(NA, nrow = p, ncol = p)
+fit.GIMH$p_links[upper.tri(fit.GIMH$p_links, diag = TRUE)] <- b[,6]
+
+traceplot.fit.GIMH <- traceplot.mombf(fit.GIMH, p)
+    
+plotcoda.fit.GIMH <- plotcoda.mombf(fit.GIMH, p)
+    
+
+GIMH_graph_0.95 <- bayes_graph_select(fit.GIMH$p_links, thresh = 0.95, FDR = TRUE)
+
+
+```
+
+```{r GIMH_sim1_covid_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+difftime(timer_GIMH.end, timer_GIMH.start, units = "secs")
+
+fit.GIMH$prop_accept
+
+## Convergence Diagnostics
+
+
+plot(1:length(traceplot.fit.GIMH), traceplot.fit.GIMH, type = "l", col = "blue", xlab = "Iteration", ylab = "Graph size", main = "Trace of graph size")
+
+plot(1:nrow(plotcoda.fit.GIMH), plotcoda.fit.GIMH[,1], type = "l", col = "blue", xlab = "Iteration", ylab = "Posterior link probability", ylim = range(plotcoda.fit.GIMH), main = "Trace of Posterior Probability of Link")
+for(i in 2:ncol(plotcoda.fit.GIMH)){
+  points(1:nrow(plotcoda.fit.GIMH), plotcoda.fit.GIMH[,i], type = "l", col = "blue")
+}
+
+sum(GIMH_graph_0.95[upper.tri(GIMH_graph_0.95, diag = FALSE)])
+
+
+
+```
+
+## bdgraph.mpl
+
+```{r bdgraph.mpl_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE, cache.lazy = FALSE}
+jumps <- 1
+
+iter_multiplier <- ceiling(sqrt(p))
+
+timer_bdgraph.mpl.start <- Sys.time()
+fit.bdgraph.mpl <- bdgraph.mpl(covid1_scaled, method="ggm", iter= iter_multiplier*(iterations+warmup), burnin = iter_multiplier*warmup, g.prior= prior_params_covid$w_slab, save=TRUE, verbose=TRUE, g.start = Omega_init!=0, jump = jumps)
+timer_bdgraph.mpl.end <- Sys.time()
+
+```
+
+```{r bdgraph.mpl_covid_Omega, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE, cache.lazy = FALSE}
+S <- t(covid1_scaled)%*%covid1_scaled
+
+timer_bdgraph.mpl.Omega.start <- Sys.time()
+  bdgraph.mpl_samples_temp <- bdgraph.mpl_sampleOmega(fit.bdgraph.mpl, iter=iterations, p, S, n_train = n, store_samples = FALSE)
+timer_bdgraph.mpl.Omega.end <- Sys.time()
+
+```
+
+
+```{r bdgraph.mpl_covid_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE, cache.lazy = FALSE}
+
+fit.bdgraph.mpl$p_links <- plinks(fit.bdgraph.mpl, round = 3, burnin = NULL)
+
+bdgraph.mpl_graph_0.95 <- bayes_graph_select(fit.bdgraph.mpl$p_links, thresh = 0.95, FDR = TRUE)
+
+traceplot(fit.bdgraph.mpl)
+
+plotcoda(fit.bdgraph.mpl, verbose = FALSE, thin = iter_multiplier)
+
+
+```
+
+
+```{r bdgraph.mpl_covid_diag2, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+difftime(timer_bdgraph.mpl.end, timer_bdgraph.mpl.start, units = "secs")
+
+
+sum(bdgraph.mpl_graph_0.95[upper.tri(bdgraph.mpl_graph_0.95, diag = FALSE)])
+
+```
+
+
+### Maps 
+
+```{r bdgraph.mpl_covid_MAP095_prep, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
+
+
+# ## edges connection for GLASSO
+par_corr_GLASSO <- bdgraph.mpl_graph_0.95
+m1 <- par_corr_GLASSO
+
+colnames(m1) <- paste0(1:p)
+rownames(m1) <- paste0(1:p)
+
+m1 <-data.frame(from =colnames(m1)[col(m1)[lower.tri(m1)]], 
+                to =rownames(m1)[row(m1)[lower.tri(m1)]], 
+                corr=m1[lower.tri(m1)])            ## convert partial correlation matrix to column
+
+edges_bdgraph.mpl_95 <- m1[m1$corr != 0, ]      ## only keep those rows that corr != 0
+
+
+edges_bdgraph.mpl_95 <- edges_bdgraph.mpl_95 %>%  
+  mutate(from = as.numeric(from), to = as.numeric(to))   ##convert the type to be consistant with "nodes"
+
+edges_for_plot_95 <- edges_bdgraph.mpl_95 %>%
+  inner_join(nodes_new %>% dplyr::select(id, lon, lat), by = c('from' = 'id')) %>%
+  rename(x = lon, y = lat) %>%
+  inner_join(nodes_new %>% dplyr::select(id, lon, lat), by = c('to' = 'id')) %>%
+  rename(xend = lon, yend = lat)           ## define the start(from(x,y)) and end(to(xend,yend)) point for each edges
+
+```
+
+```{r bdgraph.mpl_covid_MAP095, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
+
+## plot of GLASSO
+##################################
+## transform nodes and edges
+#nodes_ordered <- nodes[, c(2, 3, 4, 5, 1)]
+nodes_ordered <- nodes_new[, c(2, 3, 1)]
+
+
+# Transforming node coordinates using usmap_transform function
+nodes_transformed <- usmap_transform(nodes_ordered, input_names = c("lon", "lat"))
+
+# Transforming edge coordinates using usmap_transform function for both start and end points
+edges_for_plot_transformed_95 <- usmap_transform(edges_for_plot_95, input_names = c("x", "y"))   %>% arrange(to) %>% arrange(from)
+edges_for_plot_transformed2_95 <- usmap_transform(edges_for_plot_95, input_names = c("xend", "yend"))  %>% arrange(to) %>% arrange(from)
+
+# Merging transformed edge coordinates into a single data frame
+merged_data_sf_95 <- cbind(edges_for_plot_transformed_95, edges_for_plot_transformed2_95)
+
+
+plot_usmap(fill = "white", color = "#2b2b2b", alpha = 0.25) +
+  geom_segment(data = merged_data_sf_95, 
+               aes(x = st_coordinates(geometry)[,1], xend = st_coordinates(geometry.1)[,1],
+                   y = st_coordinates(geometry)[,2], yend = st_coordinates(geometry.1)[,2]),
+               color = "red", size = 0.35, alpha = 0.5) +
+  geom_point(data = nodes_transformed, aes(x = st_coordinates(geometry)[,1], y =st_coordinates(geometry)[,2]),
+          fill = alpha("#b30000", 1/2), color = "#b30000", shape=21) +
+  labs(title = "The Edges Estimated from bdgraph.mpl and US Map",
+       #subtitle = "",
+       size = "Magnitude") +
+  theme(legend.position = "right", plot.margin = unit(c(0.25,0,0,0), "cm"))
+#top, right, bottom, left
+
+
+```
+
+### Unique edges bdgraph.mpl (and not Gibbs)
+
+```{r bdgraph.mpl_unique_Map_Plot2_95, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
+
+edges_Gibbs_95_check <- dplyr::select(edges_Gibbs_95, -corr)
+edges_bdgraph.mpl_95_check <- dplyr::select(edges_bdgraph.mpl_95, -corr)
+
+unique_bdgraph.mpl_95 <- dplyr::setdiff(edges_bdgraph.mpl_95_check, edges_Gibbs_95_check)   ## unique for edges_A1_check
+
+## merge with edges
+unique_bdgraph.mpl_edges_95 <- merge(unique_bdgraph.mpl_95, edges_bdgraph.mpl_95, by = c("from", "to"))
+unique_bdgraph.mpl_edges_95 <- arrange(unique_bdgraph.mpl_edges_95, from, to) 
+
+
+unique_bdgraph.mpl_edges_for_plot_95 <- unique_bdgraph.mpl_edges_95 %>%
+  #inner_join(nodes %>% dplyr::select(id, lon, lat), by = c('from' = 'id')) %>%
+  inner_join(nodes_new %>% dplyr::select(id, lon, lat), by = c('from' = 'id')) %>%
+  rename(x = lon, y = lat) %>%
+  #inner_join(nodes %>% dplyr::select(id, lon, lat), by = c('to' = 'id')) %>%
+  inner_join(nodes_new %>% dplyr::select(id, lon, lat), by = c('to' = 'id')) %>%
+  rename(xend = lon, yend = lat)           ## generate the coordinate for "from" and "to" counties respectively
+
+```
+
+```{r bdgraph.mpl_unique_Map_Plot3_95, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
+
+unique_bdgraph.mpl_edges_for_plot_95 <- unique_bdgraph.mpl_edges_for_plot_95[, c(4, 5, 6, 7, 1, 2, 3)]
+
+# Transforming edge coordinates using usmap_transform function for both start and end points
+unique_bdgraph.mpl_transformed_95 <- usmap_transform(unique_bdgraph.mpl_edges_for_plot_95, input_names = c("x", "y"))  %>% arrange(to) %>% arrange(from)
+unique_bdgraph.mpl_transformed2_95 <- usmap_transform(unique_bdgraph.mpl_edges_for_plot_95, input_names = c("xend", "yend"))  %>% arrange(to) %>% arrange(from)
+
+# Merging transformed edge coordinates into a single data frame
+unique_bdgraph.mpl_merged_data_sf_95 <- cbind(unique_bdgraph.mpl_transformed_95, unique_bdgraph.mpl_transformed2_95)
+
+
+
+plot_usmap(fill = "white", color = "#2b2b2b", alpha = 0.25) +
+  geom_segment(data = unique_bdgraph.mpl_merged_data_sf_95, 
+               aes(x = st_coordinates(geometry)[,1], xend = st_coordinates(geometry.1)[,1],
+                   y = st_coordinates(geometry)[,2], yend = st_coordinates(geometry.1)[,2]),
+               color = "red", size = 0.35, alpha = 0.5) +
+  geom_point(data = nodes_transformed, aes(x = st_coordinates(geometry)[,1], y =st_coordinates(geometry)[,2]),
+          fill = alpha("#b30000", 1/2), color = "#b30000", shape=21) +
+  labs(title = "Edges Unique in bdgraph.mpl and not Gibbs",
+       subtitle = "The Edges Estimated from bdgraph.mpl but not Gibbs and US Map",
+       size = "Magnitude") +
+  theme(legend.position = "right")
+
+
+```
+
+### Unique edges Gibbs (and not bdgraph.mpl)
+
+```{r Gibbs_unique_bdgraph.mpl_Map_Plot2_95, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
+
+edges_Gibbs_95_check <- dplyr::select(edges_Gibbs_95, -corr)
+edges_bdgraph.mpl_95_check <- dplyr::select(edges_bdgraph.mpl_95, -corr)
+
+unique_Gibbs_95 <- dplyr::setdiff(edges_Gibbs_95_check, edges_bdgraph.mpl_95_check)   ## unique for edges_A1_check
+
+## merge with edges
+unique_Gibbs_edges_95 <- merge(unique_Gibbs_95, edges_Gibbs_95, by = c("from", "to"))
+unique_Gibbs_edges_95 <- arrange(unique_Gibbs_edges_95, from, to) 
+
+
+unique_Gibbs_edges_for_plot_95 <- unique_Gibbs_edges_95 %>%
+  #inner_join(nodes %>% dplyr::select(id, lon, lat), by = c('from' = 'id')) %>%
+  inner_join(nodes_new %>% dplyr::select(id, lon, lat), by = c('from' = 'id')) %>%
+  rename(x = lon, y = lat) %>%
+  #inner_join(nodes %>% dplyr::select(id, lon, lat), by = c('to' = 'id')) %>%
+  inner_join(nodes_new %>% dplyr::select(id, lon, lat), by = c('to' = 'id')) %>%
+  rename(xend = lon, yend = lat)           ## generate the coordinate for "from" and "to" counties respectively
+
+```
+
+```{r Gibbs_unique_bdgraph.mpl_Map_Plot3_95, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
+
+unique_Gibbs_edges_for_plot_95 <- unique_Gibbs_edges_for_plot_95[, c(4, 5, 6, 7, 1, 2, 3)]
+
+# Transforming edge coordinates using usmap_transform function for both start and end points
+unique_Gibbs_transformed_95 <- usmap_transform(unique_Gibbs_edges_for_plot_95, input_names = c("x", "y"))  %>% arrange(to) %>% arrange(from)
+unique_Gibbs_transformed2_95 <- usmap_transform(unique_Gibbs_edges_for_plot_95, input_names = c("xend", "yend"))  %>% arrange(to) %>% arrange(from)
+
+# Merging transformed edge coordinates into a single data frame
+unique_Gibbs_merged_data_sf_95 <- cbind(unique_Gibbs_transformed_95, unique_Gibbs_transformed2_95)
+
+
+
+plot_usmap(fill = "white", color = "#2b2b2b", alpha = 0.25) +
+  geom_segment(data = unique_Gibbs_merged_data_sf_95, 
+               aes(x = st_coordinates(geometry)[,1], xend = st_coordinates(geometry.1)[,1],
+                   y = st_coordinates(geometry)[,2], yend = st_coordinates(geometry.1)[,2]),
+               color = "red", size = 0.35, alpha = 0.5) +
+  geom_point(data = nodes_transformed, aes(x = st_coordinates(geometry)[,1], y =st_coordinates(geometry)[,2]),
+          fill = alpha("#b30000", 1/2), color = "#b30000", shape=21) +
+  labs(title = "Edges Unique in Gibbs and not bdgraph.mpl",
+       subtitle = "The Edges Estimated from Gibbs but not bdgraph.mpl and US Map",
+       size = "Magnitude") +
+  theme(legend.position = "right")
+
+
+```
+
+
+## regression.pl
+
+```{r regression.pl_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+timer_regression.pl.start <- Sys.time()
+fit.regression.pl <- regression.pl_GGM(Y=covid1_scaled, iter=(iterations+warmup), burnin = warmup, w_slab=prior_params_covid$w_slab, s_slab=prior_params_covid$s_slab, lambda=prior_params_covid$lambda, Omega_init=Omega_init, store_samples = FALSE)
+timer_regression.pl.end <- Sys.time()
+
+```
+
+```{r regression.pl_covid_diag1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+regression.pl_graph_0.95 <- bayes_graph_select(fit.regression.pl$p_links, thresh = 0.95, FDR = TRUE)
+    
+```
+
+```{r regression.pl_covid_diag2, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+difftime(timer_regression.pl.end, timer_regression.pl.start, units = "secs")
+
+sum(regression.pl_graph_0.95[upper.tri(regression.pl_graph_0.95, diag = FALSE)])
+
+
+```
+
+### Maps 
+
+```{r regression.pl_covid_MAP095_prep, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
+
+
+# ## edges connection for GLASSO
+par_corr_GLASSO <- regression.pl_graph_0.95
+m1 <- par_corr_GLASSO
+
+colnames(m1) <- paste0(1:p)
+rownames(m1) <- paste0(1:p)
+
+m1 <-data.frame(from =colnames(m1)[col(m1)[lower.tri(m1)]], 
+                to =rownames(m1)[row(m1)[lower.tri(m1)]], 
+                corr=m1[lower.tri(m1)])            ## convert partial correlation matrix to column
+
+edges_regression.pl_95 <- m1[m1$corr != 0, ]      ## only keep those rows that corr != 0
+
+
+edges_regression.pl_95 <- edges_regression.pl_95 %>%  
+  mutate(from = as.numeric(from), to = as.numeric(to))   ##convert the type to be consistant with "nodes"
+
+edges_for_plot_95 <- edges_regression.pl_95 %>%
+  inner_join(nodes_new %>% dplyr::select(id, lon, lat), by = c('from' = 'id')) %>%
+  rename(x = lon, y = lat) %>%
+  inner_join(nodes_new %>% dplyr::select(id, lon, lat), by = c('to' = 'id')) %>%
+  rename(xend = lon, yend = lat)           ## define the start(from(x,y)) and end(to(xend,yend)) point for each edges
+
+```
+
+```{r regression.pl_covid_MAP095, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
+
+## plot of GLASSO
+##################################
+## transform nodes and edges
+#nodes_ordered <- nodes[, c(2, 3, 4, 5, 1)]
+nodes_ordered <- nodes_new[, c(2, 3, 1)]
+
+
+# Transforming node coordinates using usmap_transform function
+nodes_transformed <- usmap_transform(nodes_ordered, input_names = c("lon", "lat"))
+
+# Transforming edge coordinates using usmap_transform function for both start and end points
+edges_for_plot_transformed_95 <- usmap_transform(edges_for_plot_95, input_names = c("x", "y"))   %>% arrange(to) %>% arrange(from)
+edges_for_plot_transformed2_95 <- usmap_transform(edges_for_plot_95, input_names = c("xend", "yend"))  %>% arrange(to) %>% arrange(from)
+
+# Merging transformed edge coordinates into a single data frame
+merged_data_sf_95 <- cbind(edges_for_plot_transformed_95, edges_for_plot_transformed2_95)
+
+
+plot_usmap(fill = "white", color = "#2b2b2b", alpha = 0.25) +
+  geom_segment(data = merged_data_sf_95, 
+               aes(x = st_coordinates(geometry)[,1], xend = st_coordinates(geometry.1)[,1],
+                   y = st_coordinates(geometry)[,2], yend = st_coordinates(geometry.1)[,2]),
+               color = "red", size = 0.35, alpha = 0.5) +
+  geom_point(data = nodes_transformed, aes(x = st_coordinates(geometry)[,1], y =st_coordinates(geometry)[,2]),
+          fill = alpha("#b30000", 1/2), color = "#b30000", shape=21) +
+  labs(title = "The Edges Estimated from regression.pl and US Map",
+       #subtitle = "",
+       size = "Magnitude") +
+  theme(legend.position = "right", plot.margin = unit(c(0.25,0,0,0), "cm"))
+#top, right, bottom, left
+
+
+```
+
+### Unique edges regression.pl (and not Gibbs)
+
+```{r regression.pl_unique_Map_Plot2_95, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
+
+edges_Gibbs_95_check <- dplyr::select(edges_Gibbs_95, -corr)
+edges_regression.pl_95_check <- dplyr::select(edges_regression.pl_95, -corr)
+
+unique_regression.pl_95 <- dplyr::setdiff(edges_regression.pl_95_check, edges_Gibbs_95_check)   ## unique for edges_A1_check
+
+## merge with edges
+unique_regression.pl_edges_95 <- merge(unique_regression.pl_95, edges_regression.pl_95, by = c("from", "to"))
+unique_regression.pl_edges_95 <- arrange(unique_regression.pl_edges_95, from, to) 
+
+
+unique_regression.pl_edges_for_plot_95 <- unique_regression.pl_edges_95 %>%
+  #inner_join(nodes %>% dplyr::select(id, lon, lat), by = c('from' = 'id')) %>%
+  inner_join(nodes_new %>% dplyr::select(id, lon, lat), by = c('from' = 'id')) %>%
+  rename(x = lon, y = lat) %>%
+  #inner_join(nodes %>% dplyr::select(id, lon, lat), by = c('to' = 'id')) %>%
+  inner_join(nodes_new %>% dplyr::select(id, lon, lat), by = c('to' = 'id')) %>%
+  rename(xend = lon, yend = lat)           ## generate the coordinate for "from" and "to" counties respectively
+
+```
+
+```{r regression.pl_unique_Map_Plot3_95, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
+
+unique_regression.pl_edges_for_plot_95 <- unique_regression.pl_edges_for_plot_95[, c(4, 5, 6, 7, 1, 2, 3)]
+
+# Transforming edge coordinates using usmap_transform function for both start and end points
+unique_regression.pl_transformed_95 <- usmap_transform(unique_regression.pl_edges_for_plot_95, input_names = c("x", "y"))  %>% arrange(to) %>% arrange(from)
+unique_regression.pl_transformed2_95 <- usmap_transform(unique_regression.pl_edges_for_plot_95, input_names = c("xend", "yend"))  %>% arrange(to) %>% arrange(from)
+
+# Merging transformed edge coordinates into a single data frame
+unique_regression.pl_merged_data_sf_95 <- cbind(unique_regression.pl_transformed_95, unique_regression.pl_transformed2_95)
+
+
+
+plot_usmap(fill = "white", color = "#2b2b2b", alpha = 0.25) +
+  geom_segment(data = unique_regression.pl_merged_data_sf_95, 
+               aes(x = st_coordinates(geometry)[,1], xend = st_coordinates(geometry.1)[,1],
+                   y = st_coordinates(geometry)[,2], yend = st_coordinates(geometry.1)[,2]),
+               color = "red", size = 0.35, alpha = 0.5) +
+  geom_point(data = nodes_transformed, aes(x = st_coordinates(geometry)[,1], y =st_coordinates(geometry)[,2]),
+          fill = alpha("#b30000", 1/2), color = "#b30000", shape=21) +
+  labs(title = "Edges Unique in regression.pl and not Gibbs",
+       subtitle = "The Edges Estimated from regression.pl but not Gibbs and US Map",
+       size = "Magnitude") +
+  theme(legend.position = "right")
+
+
+```
+
+### Unique edges Gibbs (and not regression.pl)
+
+```{r Gibbs_unique_regression.pl_Map_Plot2_95, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
+
+edges_Gibbs_95_check <- dplyr::select(edges_Gibbs_95, -corr)
+edges_regression.pl_95_check <- dplyr::select(edges_regression.pl_95, -corr)
+
+unique_Gibbs_95 <- dplyr::setdiff(edges_Gibbs_95_check, edges_regression.pl_95_check)   ## unique for edges_A1_check
+
+## merge with edges
+unique_Gibbs_edges_95 <- merge(unique_Gibbs_95, edges_Gibbs_95, by = c("from", "to"))
+unique_Gibbs_edges_95 <- arrange(unique_Gibbs_edges_95, from, to) 
+
+
+unique_Gibbs_edges_for_plot_95 <- unique_Gibbs_edges_95 %>%
+  #inner_join(nodes %>% dplyr::select(id, lon, lat), by = c('from' = 'id')) %>%
+  inner_join(nodes_new %>% dplyr::select(id, lon, lat), by = c('from' = 'id')) %>%
+  rename(x = lon, y = lat) %>%
+  #inner_join(nodes %>% dplyr::select(id, lon, lat), by = c('to' = 'id')) %>%
+  inner_join(nodes_new %>% dplyr::select(id, lon, lat), by = c('to' = 'id')) %>%
+  rename(xend = lon, yend = lat)           ## generate the coordinate for "from" and "to" counties respectively
+
+```
+
+```{r Gibbs_unique_regression.pl_Map_Plot3_95, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
+
+unique_Gibbs_edges_for_plot_95 <- unique_Gibbs_edges_for_plot_95[, c(4, 5, 6, 7, 1, 2, 3)]
+
+# Transforming edge coordinates using usmap_transform function for both start and end points
+unique_Gibbs_transformed_95 <- usmap_transform(unique_Gibbs_edges_for_plot_95, input_names = c("x", "y"))  %>% arrange(to) %>% arrange(from)
+unique_Gibbs_transformed2_95 <- usmap_transform(unique_Gibbs_edges_for_plot_95, input_names = c("xend", "yend"))  %>% arrange(to) %>% arrange(from)
+
+# Merging transformed edge coordinates into a single data frame
+unique_Gibbs_merged_data_sf_95 <- cbind(unique_Gibbs_transformed_95, unique_Gibbs_transformed2_95)
+
+
+
+plot_usmap(fill = "white", color = "#2b2b2b", alpha = 0.25) +
+  geom_segment(data = unique_Gibbs_merged_data_sf_95, 
+               aes(x = st_coordinates(geometry)[,1], xend = st_coordinates(geometry.1)[,1],
+                   y = st_coordinates(geometry)[,2], yend = st_coordinates(geometry.1)[,2]),
+               color = "red", size = 0.35, alpha = 0.5) +
+  geom_point(data = nodes_transformed, aes(x = st_coordinates(geometry)[,1], y =st_coordinates(geometry)[,2]),
+          fill = alpha("#b30000", 1/2), color = "#b30000", shape=21) +
+  labs(title = "Edges Unique in Gibbs and not regression.pl",
+       subtitle = "The Edges Estimated from Gibbs but not regression.pl and US Map",
+       size = "Magnitude") +
+  theme(legend.position = "right")
+
+
+```
+
+## Results summary
+
+```{r GGM_covid_diag2, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+results_df <- data.frame(Method = c("GLASSO-BIC", "GLASSO-EBIC", "Gibbs", "GIMH", "bdgraph.mpl", "regression.pl"),
+                         edges = c((sum(GLASSO_BIC_graph - diag(1, p)))/2, (sum(GLASSO_EBIC_graph - diag(1, p)))/2, sum(Gibbs_graph_0.95[upper.tri(Gibbs_graph_0.95, diag = FALSE)]), sum(GIMH_graph_0.95[upper.tri(GIMH_graph_0.95, diag = FALSE)]), sum(bdgraph.mpl_graph_0.95[upper.tri(bdgraph.mpl_graph_0.95, diag = FALSE)]), sum(regression.pl_graph_0.95[upper.tri(regression.pl_graph_0.95, diag = FALSE)])),
+                         time = c(difftime(timer_GLASSO_BIC.end, timer_GLASSO_BIC.start, units = "hours"), difftime(timer_GLASSO_EBIC.end, timer_GLASSO_EBIC.start, units = "hours"), difftime(timer_Gibbs.end, timer_Gibbs.start, units = "hours"), difftime(timer_GIMH.end, timer_GIMH.start, units = "hours"), difftime(timer_bdgraph.mpl.end, timer_bdgraph.mpl.start, units = "hours") + difftime(timer_bdgraph.mpl.Omega.end, timer_bdgraph.mpl.Omega.start, units = "hours"), difftime(timer_regression.pl.end, timer_regression.pl.start, units = "hours"))
+                         )
+
+xtable(results_df, digits=3)
+
+kable(results_df)
+
+
+
+```
+
+

@@ -1,0 +1,3622 @@
+---
+title: "GGM Posterior Inference"
+author: "Deborah Sulem, Jack Jewson and David Rossell"
+date: "28 July 2025"
+output: html_document
+---
+
+
+# $n and $p$
+
+```{r setting, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+p <- 10
+#p <- 50
+#p <- 100
+
+#n <- p
+n <- 2*p
+#n <- 5*p
+
+N_rep <- 10
+
+
+```
+
+# Preamble {.tabset}
+
+## Packages
+
+Loading the required packages.
+
+```{r packages, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+library(mnormt)
+
+library(BDgraph)
+library(ssgraph)
+
+#remove.packages("mombf")
+#if (file.exists(".RData")) file.remove(".RData")
+#library(devtools)
+#install_github("davidrusi/mombf")
+library(mombf)
+
+library(ggplot2)
+library(ggpubr)
+library(patchwork)
+library(matrixStats)
+library(xtable)
+library(knitr)
+library(pROC) # https://www.geeksforgeeks.org/plotting-roc-curve-in-r-programming/
+library(dplyr)
+```
+
+## Functions
+
+```{r functions, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+source("../functions/priorElicitation.R")
+source("../functions/general_functions.R")
+source("../functions/inference_wrappers.R")
+```
+
+## Iterations
+
+Each iteration of ssgraph does every row and every column
+
+```{r iterations, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+warmup <- 5000
+iterations <- 10000
+```
+
+## Prior Elicitation
+
+```{r prior_elicitation2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+w_slab_set <- 2/(p-1)
+
+get_set_diag_all <- set_diag_one(lower_bound = 1, prob = 0.99)
+
+lambda_set <- get_set_diag_all
+lambda_set
+
+N <- 5000
+#s_slab_grid <- seq(0.2, 2, length.out = 20)
+#s_slab_grid <- seq(0.75, 3, length.out = 20)
+s_slab_grid <- seq(3, 6, length.out = 20)
+lambda <- lambda_set
+probPD <- 0.95
+truncDiag <- TRUE
+verbose <- FALSE
+
+N_try <- length(s_slab_grid)
+probPD_eval <- rep(NA, N_try)
+for(i in 1:N_try){
+  probPD_eval[i] <- probPD_diagExp_SSGaussian(N, p, w_slab_set, s_slab = s_slab_grid[i], lambda_set, truncDiag, verbose)
+  if(verbose){
+    cat("\r", "try", i, "done", "\n")
+  }
+    
+}
+
+s_slab_set <- s_slab_grid[which.min(abs(probPD_eval - probPD))]
+s_slab_set
+
+```
+
+```{r prior_elicitation22, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+plot(s_slab_grid, abs(probPD_eval - probPD))
+
+```
+
+```{r prior, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+prior_params <- list("s_slab" = s_slab_set,
+                        "w_slab" = w_slab_set,
+                        "lambda" = lambda_set
+)
+
+```
+
+# Random_p {.tabset}
+
+```{r data_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+graph_type <- "random"
+graph_prob <- 1/p
+
+set.seed(-1)
+
+Theta_sim <- list()
+data_y <- list()
+
+for(i in 1:N_rep){
+  ggm <- NA
+  while(is.list(ggm) == FALSE){
+    G <- generate_G(p, type = graph_type, graph_prob = graph_prob)
+    ggm <- generate_Theta_y(n, G, min_rho = 0.1, max_rho = 0.5)
+  }
+  Theta_sim[[i]] <- ggm$Theta
+  data_y[[i]] <- ggm$y
+}
+
+```
+
+## GLASSO (BIC)
+
+```{r GLASSO_BIC_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GLASSO_BIC_Theta_MAE_sim1 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_Theta_diag_MAE_sim1 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_Theta_zeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_Theta_nonzeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_TP_sim1 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_TN_sim1 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_FP_sim1 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_FN_sim1 <- array(NA, dim = c(N_rep))
+
+GLASSO_BIC_time_sim1 <- array(NA, dim = c(N_rep))
+
+for(i in 1:N_rep){
+
+  GLASSO_BIC <- GLASSO_inference(data_y[[i]], Theta_sim[[i]], criteria = 'bic')
+  
+  GLASSO_BIC_time_sim1[i] <- GLASSO_BIC$Time
+  
+  GLASSO_BIC_Theta_MAE_sim1[i] <- GLASSO_BIC$Theta_MAE
+  GLASSO_BIC_Theta_diag_MAE_sim1[i] <- GLASSO_BIC$Theta_diag_MAE
+  GLASSO_BIC_Theta_zeros_MAE_sim1[i] <- GLASSO_BIC$Theta_zeros_MAE
+  GLASSO_BIC_Theta_nonzeros_MAE_sim1[i] <- GLASSO_BIC$Theta_nonzeros_MAE
+  
+  GLASSO_BIC_TP_sim1[i] <- GLASSO_BIC$TP
+  GLASSO_BIC_TN_sim1[i] <- GLASSO_BIC$TN
+  GLASSO_BIC_FP_sim1[i] <- GLASSO_BIC$FP
+  GLASSO_BIC_FN_sim1[i] <- GLASSO_BIC$FN
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+
+}
+
+```
+
+```{r GLASSO_BIC_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GLASSO_BIC_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("GLASSO-BIC", 6),
+  Type = rep("Frequentist", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(GLASSO_BIC_Theta_MAE_sim1), 
+           NA,
+           mean(FDR(GLASSO_BIC_FP_sim1, GLASSO_BIC_TP_sim1)),
+           mean(GLASSO_BIC_TP_sim1/(GLASSO_BIC_FN_sim1 + GLASSO_BIC_TP_sim1), na.rm = TRUE),
+           NA,
+           mean(GLASSO_BIC_time_sim1)
+  ),
+  sd = c(sd(GLASSO_BIC_Theta_MAE_sim1)/sqrt(N_rep), 
+           NA,
+           sd(FDR(GLASSO_BIC_FP_sim1, GLASSO_BIC_TP_sim1))/sqrt(N_rep),
+           sd(GLASSO_BIC_TP_sim1/(GLASSO_BIC_FN_sim1 + GLASSO_BIC_TP_sim1), na.rm = TRUE)/sqrt(N_rep),
+           NA,
+           sd(GLASSO_BIC_time_sim1)/sqrt(N_rep)
+  )
+)
+
+```
+
+## GLASSO (EBIC)
+
+```{r GLASSO_EBIC_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GLASSO_EBIC_Theta_MAE_sim1 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_Theta_diag_MAE_sim1 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_Theta_zeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_Theta_nonzeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_TP_sim1 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_TN_sim1 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_FP_sim1 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_FN_sim1 <- array(NA, dim = c(N_rep))
+
+GLASSO_EBIC_time_sim1 <- array(NA, dim = c(N_rep))
+
+for(i in 1:N_rep){
+
+  GLASSO_EBIC <- GLASSO_inference(data_y[[i]], Theta_sim[[i]], criteria = 'ebic')
+  
+  GLASSO_EBIC_time_sim1[i] <- GLASSO_EBIC$Time
+  
+  GLASSO_EBIC_Theta_MAE_sim1[i] <- GLASSO_EBIC$Theta_MAE
+  GLASSO_EBIC_Theta_diag_MAE_sim1[i] <- GLASSO_EBIC$Theta_diag_MAE
+  GLASSO_EBIC_Theta_zeros_MAE_sim1[i] <- GLASSO_EBIC$Theta_zeros_MAE
+  GLASSO_EBIC_Theta_nonzeros_MAE_sim1[i] <- GLASSO_EBIC$Theta_nonzeros_MAE
+  
+  GLASSO_EBIC_TP_sim1[i] <- GLASSO_EBIC$TP
+  GLASSO_EBIC_TN_sim1[i] <- GLASSO_EBIC$TN
+  GLASSO_EBIC_FP_sim1[i] <- GLASSO_EBIC$FP
+  GLASSO_EBIC_FN_sim1[i] <- GLASSO_EBIC$FN
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+
+}
+
+```
+
+```{r GLASSO_EBIC_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GLASSO_EBIC_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("GLASSO-EBIC", 6),
+  Type = rep("Frequentist", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(GLASSO_EBIC_Theta_MAE_sim1), 
+           NA,
+           mean(FDR(GLASSO_EBIC_FP_sim1, GLASSO_EBIC_TP_sim1)),
+           mean(GLASSO_EBIC_TP_sim1/(GLASSO_EBIC_FN_sim1 + GLASSO_EBIC_TP_sim1), na.rm = TRUE),
+          NA,
+           mean(GLASSO_EBIC_time_sim1)
+  ),
+  sd = c(sd(GLASSO_EBIC_Theta_MAE_sim1)/sqrt(N_rep), 
+           NA,
+           sd(FDR(GLASSO_EBIC_FP_sim1, GLASSO_EBIC_TP_sim1))/sqrt(N_rep),
+           sd(GLASSO_EBIC_TP_sim1/(GLASSO_EBIC_FN_sim1 + GLASSO_EBIC_TP_sim1), na.rm = TRUE)/sqrt(N_rep),
+           NA,
+           sd(GLASSO_EBIC_time_sim1)/sqrt(N_rep)
+  )
+)
+
+```
+
+## ssgraph
+
+```{r ssgraph_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+ssgraph_Theta_MAE_sim1 <- array(NA, dim = c(N_rep))
+ssgraph_Theta_diag_MAE_sim1 <- array(NA, dim = c(N_rep))
+ssgraph_Theta_zeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+ssgraph_Theta_nonzeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+ssgraph_p_MAE_sim1 <- array(NA, dim = c(N_rep))
+ssgraph_p_zeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+ssgraph_p_nonzeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+
+ssgraph_TP0.95_sim1 <- array(NA, dim = c(N_rep))
+ssgraph_TN0.95_sim1 <- array(NA, dim = c(N_rep))
+ssgraph_FP0.95_sim1 <- array(NA, dim = c(N_rep))
+ssgraph_FN0.95_sim1 <- array(NA, dim = c(N_rep))
+
+ssgraph_AUC_sim1 <- array(NA, dim = c(N_rep))
+
+ssgraph_time_sim1 <- array(NA, dim = c(N_rep))
+
+ssgraph_coverage_sim1 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  ssgraph_results <- ssgraph_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, s_spike = 2e-02)
+  
+  ssgraph_time_sim1[i] <- ssgraph_results$Time
+  
+  ## chain 1
+  ssgraph_Theta_MAE_sim1[i] <- ssgraph_results$Theta_MAE
+  ssgraph_Theta_diag_MAE_sim1[i] <- ssgraph_results$Theta_diag_MAE
+  ssgraph_Theta_zeros_MAE_sim1[i] <- ssgraph_results$Theta_zeros_MAE
+  ssgraph_Theta_nonzeros_MAE_sim1[i] <- ssgraph_results$Theta_nonzeros_MAE
+  
+  ssgraph_p_MAE_sim1[i] <- ssgraph_results$p_MAE
+  ssgraph_p_zeros_MAE_sim1[i] <- ssgraph_results$p_zeros_MAE
+  ssgraph_p_nonzeros_MAE_sim1[i] <- ssgraph_results$p_nonzeros_MAE
+  
+  ssgraph_TP0.95_sim1[i] <- ssgraph_results$TP0.95
+  ssgraph_TN0.95_sim1[i] <- ssgraph_results$TN0.95
+  ssgraph_FP0.95_sim1[i] <- ssgraph_results$FP0.95
+  ssgraph_FN0.95_sim1[i] <- ssgraph_results$FN0.95
+  
+  ssgraph_AUC_sim1[i] <- ssgraph_results$AUC  
+  
+  #ssgraph_coverage_sim1[i] <- ssgraph_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r ssgraph_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+ssgraph_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("ssgraph", 6),
+  Type = rep("Local-Prev", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(ssgraph_Theta_MAE_sim1), 
+           mean(ssgraph_AUC_sim1),
+           mean(FDR(ssgraph_FP0.95_sim1, ssgraph_TP0.95_sim1)),
+           mean(ssgraph_TP0.95_sim1/(ssgraph_FN0.95_sim1 + ssgraph_TP0.95_sim1), na.rm = TRUE),
+           mean(ssgraph_coverage_sim1),
+           mean(ssgraph_time_sim1)
+  ),
+  sd = c(sd(ssgraph_Theta_MAE_sim1)/sqrt(N_rep), 
+           sd(ssgraph_AUC_sim1)/sqrt(N_rep),
+           sd(FDR(ssgraph_FP0.95_sim1, ssgraph_TP0.95_sim1))/sqrt(N_rep),
+           sd(ssgraph_TP0.95_sim1/(ssgraph_FN0.95_sim1 + ssgraph_TP0.95_sim1), na.rm = TRUE)/sqrt(N_rep),
+           sd(ssgraph_coverage_sim1)/sqrt(N_rep),
+           sd(ssgraph_time_sim1)/sqrt(N_rep)
+  )
+)
+
+
+
+```
+
+## bdgraph
+
+Each iteration of bdgraph only updates one element, should at least scale this by the number of rows
+
+```{r bdgraph_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph_Theta_MAE_sim1 <- array(NA, dim = c(N_rep))
+bdgraph_Theta_diag_MAE_sim1 <- array(NA, dim = c(N_rep))
+bdgraph_Theta_zeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+bdgraph_Theta_nonzeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+bdgraph_p_MAE_sim1 <- array(NA, dim = c(N_rep))
+bdgraph_p_zeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+bdgraph_p_nonzeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+
+bdgraph_TP0.95_sim1 <- array(NA, dim = c(N_rep))
+bdgraph_TN0.95_sim1 <- array(NA, dim = c(N_rep))
+bdgraph_FP0.95_sim1 <- array(NA, dim = c(N_rep))
+bdgraph_FN0.95_sim1 <- array(NA, dim = c(N_rep))
+
+bdgraph_AUC_sim1 <- array(NA, dim = c(N_rep))
+
+bdgraph_time_sim1 <- array(NA, dim = c(N_rep))
+
+bdgraph_coverage_sim1 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  bdgraph_results <- bdgraph_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab)
+  
+  bdgraph_time_sim1[i] <- bdgraph_results$Time
+  
+  ## chain 1
+  bdgraph_Theta_MAE_sim1[i] <- bdgraph_results$Theta_MAE
+  bdgraph_Theta_diag_MAE_sim1[i] <- bdgraph_results$Theta_diag_MAE
+  bdgraph_Theta_zeros_MAE_sim1[i] <- bdgraph_results$Theta_zeros_MAE
+  bdgraph_Theta_nonzeros_MAE_sim1[i] <- bdgraph_results$Theta_nonzeros_MAE
+  
+  bdgraph_p_MAE_sim1[i] <- bdgraph_results$p_MAE
+  bdgraph_p_zeros_MAE_sim1[i] <- bdgraph_results$p_zeros_MAE
+  bdgraph_p_nonzeros_MAE_sim1[i] <- bdgraph_results$p_nonzeros_MAE
+  
+  bdgraph_TP0.95_sim1[i] <- bdgraph_results$TP0.95
+  bdgraph_TN0.95_sim1[i] <- bdgraph_results$TN0.95
+  bdgraph_FP0.95_sim1[i] <- bdgraph_results$FP0.95
+  bdgraph_FN0.95_sim1[i] <- bdgraph_results$FN0.95
+  
+  bdgraph_AUC_sim1[i] <- bdgraph_results$AUC  
+  
+  bdgraph_coverage_sim1[i] <- bdgraph_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r bdgraph_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+bdgraph_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("bdgraph", 6),
+  Type = rep("Local-Prev", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(bdgraph_Theta_MAE_sim1), 
+           mean(bdgraph_AUC_sim1),
+           mean(FDR(bdgraph_FP0.95_sim1, bdgraph_TP0.95_sim1)),
+           mean(bdgraph_TP0.95_sim1/(bdgraph_FN0.95_sim1 + bdgraph_TP0.95_sim1), na.rm = TRUE),
+           mean(bdgraph_coverage_sim1),
+           mean(bdgraph_time_sim1)
+  ),
+  sd = c(sd(bdgraph_Theta_MAE_sim1)/sqrt(N_rep), 
+           sd(bdgraph_AUC_sim1)/sqrt(N_rep),
+           sd(FDR(bdgraph_FP0.95_sim1, bdgraph_TP0.95_sim1))/sqrt(N_rep),
+           sd(bdgraph_TP0.95_sim1/(bdgraph_FN0.95_sim1 + bdgraph_TP0.95_sim1), na.rm = TRUE)/sqrt(N_rep),
+           sd(bdgraph_coverage_sim1)/sqrt(N_rep),
+           sd(bdgraph_time_sim1)/sqrt(N_rep)
+  )
+)
+
+```
+
+## bdgraph.mpl
+
+Just going from save=FALSE to save=TRUE increases the computation a lot
+
+```{r bdgraph.mpl_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph.mpl_Theta_MAE_sim1 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_Theta_diag_MAE_sim1 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_Theta_zeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_Theta_nonzeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_p_MAE_sim1 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_p_zeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_p_nonzeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_TP0.95_sim1 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_TN0.95_sim1 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_FP0.95_sim1 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_FN0.95_sim1 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_AUC_sim1 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_time_sim1 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_coverage_sim1 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  bdgraph.mpl_results <- bdgraph.mpl_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab)
+  
+  bdgraph.mpl_time_sim1[i] <- bdgraph.mpl_results$Time
+  
+  ## chain 1
+  bdgraph.mpl_Theta_MAE_sim1[i] <- bdgraph.mpl_results$Theta_MAE
+  bdgraph.mpl_Theta_diag_MAE_sim1[i] <- bdgraph.mpl_results$Theta_diag_MAE
+  bdgraph.mpl_Theta_zeros_MAE_sim1[i] <- bdgraph.mpl_results$Theta_zeros_MAE
+  bdgraph.mpl_Theta_nonzeros_MAE_sim1[i] <- bdgraph.mpl_results$Theta_nonzeros_MAE
+  
+  bdgraph.mpl_p_MAE_sim1[i] <- bdgraph.mpl_results$p_MAE
+  bdgraph.mpl_p_zeros_MAE_sim1[i] <- bdgraph.mpl_results$p_zeros_MAE
+  bdgraph.mpl_p_nonzeros_MAE_sim1[i] <- bdgraph.mpl_results$p_nonzeros_MAE
+  
+  bdgraph.mpl_TP0.95_sim1[i] <- bdgraph.mpl_results$TP0.95
+  bdgraph.mpl_TN0.95_sim1[i] <- bdgraph.mpl_results$TN0.95
+  bdgraph.mpl_FP0.95_sim1[i] <- bdgraph.mpl_results$FP0.95
+  bdgraph.mpl_FN0.95_sim1[i] <- bdgraph.mpl_results$FN0.95
+  
+  bdgraph.mpl_AUC_sim1[i] <- bdgraph.mpl_results$AUC  
+  
+  bdgraph.mpl_coverage_sim1[i] <- bdgraph.mpl_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+   
+ 
+
+```
+
+```{r bdgraph.mpl_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph.mpl_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("bdgraph.mpl", 6),
+  Type = rep("Pseudo", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(bdgraph.mpl_Theta_MAE_sim1), 
+           mean(bdgraph.mpl_AUC_sim1),
+           mean(FDR(bdgraph.mpl_FP0.95_sim1, bdgraph.mpl_TP0.95_sim1)),
+           mean(bdgraph.mpl_TP0.95_sim1/(bdgraph.mpl_FN0.95_sim1 + bdgraph.mpl_TP0.95_sim1), na.rm = TRUE),
+           mean(bdgraph.mpl_coverage_sim1),
+           mean(bdgraph.mpl_time_sim1)
+  ),
+  sd = c(sd(bdgraph.mpl_Theta_MAE_sim1)/sqrt(N_rep), 
+           sd(bdgraph.mpl_AUC_sim1)/sqrt(N_rep),
+           sd(FDR(bdgraph.mpl_FP0.95_sim1, bdgraph.mpl_TP0.95_sim1))/sqrt(N_rep),
+           sd(bdgraph.mpl_TP0.95_sim1/(bdgraph.mpl_FN0.95_sim1 + bdgraph.mpl_TP0.95_sim1), na.rm = TRUE)/sqrt(N_rep),
+           sd(bdgraph.mpl_coverage_sim1)/sqrt(N_rep),
+           sd(bdgraph.mpl_time_sim1)/sqrt(N_rep)
+  )
+)
+
+
+
+```
+
+## Gibbs
+
+```{r Gibbs_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+Gibbs_Theta_MAE_sim1 <- array(NA, dim = c(N_rep))
+Gibbs_Theta_diag_MAE_sim1 <- array(NA, dim = c(N_rep))
+Gibbs_Theta_zeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+Gibbs_Theta_nonzeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+Gibbs_p_MAE_sim1 <- array(NA, dim = c(N_rep))
+Gibbs_p_zeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+Gibbs_p_nonzeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+
+Gibbs_TP0.95_sim1 <- array(NA, dim = c(N_rep))
+Gibbs_TN0.95_sim1 <- array(NA, dim = c(N_rep))
+Gibbs_FP0.95_sim1 <- array(NA, dim = c(N_rep))
+Gibbs_FN0.95_sim1 <- array(NA, dim = c(N_rep))
+
+Gibbs_AUC_sim1 <- array(NA, dim = c(N_rep))
+
+Gibbs_time_sim1 <- array(NA, dim = c(N_rep))
+
+Gibbs_coverage_sim1 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  Gibbs_results <- Gibbs_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  Gibbs_time_sim1[i] <- Gibbs_results$Time
+  
+  ## chain 1
+  Gibbs_Theta_MAE_sim1[i] <- Gibbs_results$Theta_MAE
+  Gibbs_Theta_diag_MAE_sim1[i] <- Gibbs_results$Theta_diag_MAE
+  Gibbs_Theta_zeros_MAE_sim1[i] <- Gibbs_results$Theta_zeros_MAE
+  Gibbs_Theta_nonzeros_MAE_sim1[i] <- Gibbs_results$Theta_nonzeros_MAE
+  
+  Gibbs_p_MAE_sim1[i] <- Gibbs_results$p_MAE
+  Gibbs_p_zeros_MAE_sim1[i] <- Gibbs_results$p_zeros_MAE
+  Gibbs_p_nonzeros_MAE_sim1[i] <- Gibbs_results$p_nonzeros_MAE
+  
+  Gibbs_TP0.95_sim1[i] <- Gibbs_results$TP0.95
+  Gibbs_TN0.95_sim1[i] <- Gibbs_results$TN0.95
+  Gibbs_FP0.95_sim1[i] <- Gibbs_results$FP0.95
+  Gibbs_FN0.95_sim1[i] <- Gibbs_results$FN0.95
+  
+  Gibbs_AUC_sim1[i] <- Gibbs_results$AUC  
+  
+  Gibbs_coverage_sim1[i] <- Gibbs_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r Gibbs_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+Gibbs_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("Gibbs", 6),
+  Type = rep("Local-New", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(Gibbs_Theta_MAE_sim1), 
+           mean(Gibbs_AUC_sim1),
+           mean(FDR(Gibbs_FP0.95_sim1, Gibbs_TP0.95_sim1)),
+           mean(Gibbs_TP0.95_sim1/(Gibbs_FN0.95_sim1 + Gibbs_TP0.95_sim1), na.rm = TRUE),
+           mean(Gibbs_coverage_sim1),
+           mean(Gibbs_time_sim1)
+  ),
+  sd = c(sd(Gibbs_Theta_MAE_sim1)/sqrt(N_rep), 
+           sd(Gibbs_AUC_sim1)/sqrt(N_rep),
+           sd(FDR(Gibbs_FP0.95_sim1, Gibbs_TP0.95_sim1))/sqrt(N_rep),
+           sd(Gibbs_TP0.95_sim1/(Gibbs_FN0.95_sim1 + Gibbs_TP0.95_sim1), na.rm = TRUE)/sqrt(N_rep),
+           sd(Gibbs_coverage_sim1)/sqrt(N_rep),
+           sd(Gibbs_time_sim1)/sqrt(N_rep)
+  )
+)
+
+
+```
+
+## GIMH ($\upsilon = 0.75$)
+
+```{r GIMH_Gibbs_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GIMH_Gibbs_Theta_MAE_sim1 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_Theta_diag_MAE_sim1 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_Theta_zeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_Theta_nonzeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_p_MAE_sim1 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_p_zeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_p_nonzeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_TP0.95_sim1 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_TN0.95_sim1 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_FP0.95_sim1 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_FN0.95_sim1 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_AUC_sim1 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_time_sim1 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_coverage_sim1 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  GIMH_Gibbs_results <- GIMH_Gibbs_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, tempering = 0.75)
+  
+  GIMH_Gibbs_time_sim1[i] <- GIMH_Gibbs_results$Time
+  
+  ## chain 1
+  GIMH_Gibbs_Theta_MAE_sim1[i] <- GIMH_Gibbs_results$Theta_MAE
+  GIMH_Gibbs_Theta_diag_MAE_sim1[i] <- GIMH_Gibbs_results$Theta_diag_MAE
+  GIMH_Gibbs_Theta_zeros_MAE_sim1[i] <- GIMH_Gibbs_results$Theta_zeros_MAE
+  GIMH_Gibbs_Theta_nonzeros_MAE_sim1[i] <- GIMH_Gibbs_results$Theta_nonzeros_MAE
+  
+  GIMH_Gibbs_p_MAE_sim1[i] <- GIMH_Gibbs_results$p_MAE
+  GIMH_Gibbs_p_zeros_MAE_sim1[i] <- GIMH_Gibbs_results$p_zeros_MAE
+  GIMH_Gibbs_p_nonzeros_MAE_sim1[i] <- GIMH_Gibbs_results$p_nonzeros_MAE
+
+  
+  GIMH_Gibbs_TP0.95_sim1[i] <- GIMH_Gibbs_results$TP0.95
+  GIMH_Gibbs_TN0.95_sim1[i] <- GIMH_Gibbs_results$TN0.95
+  GIMH_Gibbs_FP0.95_sim1[i] <- GIMH_Gibbs_results$FP0.95
+  GIMH_Gibbs_FN0.95_sim1[i] <- GIMH_Gibbs_results$FN0.95
+  
+  GIMH_Gibbs_AUC_sim1[i] <- GIMH_Gibbs_results$AUC  
+  
+  GIMH_Gibbs_coverage_sim1[i] <- GIMH_Gibbs_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r GIMH_Gibbs_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+GIMH_Gibbs_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("GIMH", 6),
+  Type = rep("Local-New", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(GIMH_Gibbs_Theta_MAE_sim1), 
+           mean(GIMH_Gibbs_AUC_sim1),
+           mean(FDR(GIMH_Gibbs_FP0.95_sim1, GIMH_Gibbs_TP0.95_sim1)),
+           mean(GIMH_Gibbs_TP0.95_sim1/(GIMH_Gibbs_FN0.95_sim1 + GIMH_Gibbs_TP0.95_sim1), na.rm = TRUE),
+           mean(GIMH_Gibbs_coverage_sim1),
+           mean(GIMH_Gibbs_time_sim1)
+  ),
+  sd = c(sd(GIMH_Gibbs_Theta_MAE_sim1)/sqrt(N_rep), 
+           sd(GIMH_Gibbs_AUC_sim1)/sqrt(N_rep),
+           sd(FDR(GIMH_Gibbs_FP0.95_sim1, GIMH_Gibbs_TP0.95_sim1))/sqrt(N_rep),
+           sd(GIMH_Gibbs_TP0.95_sim1/(GIMH_Gibbs_FN0.95_sim1 + GIMH_Gibbs_TP0.95_sim1), na.rm = TRUE)/sqrt(N_rep),
+           sd(GIMH_Gibbs_coverage_sim1)/sqrt(N_rep),
+           sd(GIMH_Gibbs_time_sim1)/sqrt(N_rep)
+  )
+)
+
+```
+
+## regression.pl
+
+```{r regression.pl_sim1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+regression.pl_Theta_MAE_sim1 <- array(NA, dim = c(N_rep))
+regression.pl_Theta_diag_MAE_sim1 <- array(NA, dim = c(N_rep))
+regression.pl_Theta_zeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+regression.pl_Theta_nonzeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+regression.pl_p_MAE_sim1 <- array(NA, dim = c(N_rep))
+regression.pl_p_zeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+regression.pl_p_nonzeros_MAE_sim1 <- array(NA, dim = c(N_rep))
+
+regression.pl_TP0.95_sim1 <- array(NA, dim = c(N_rep))
+regression.pl_TN0.95_sim1 <- array(NA, dim = c(N_rep))
+regression.pl_FP0.95_sim1 <- array(NA, dim = c(N_rep))
+regression.pl_FN0.95_sim1 <- array(NA, dim = c(N_rep))
+
+regression.pl_AUC_sim1 <- array(NA, dim = c(N_rep))
+
+regression.pl_time_sim1 <- array(NA, dim = c(N_rep))
+
+regression.pl_coverage_sim1 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  regression.pl_results <- regression.pl_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  regression.pl_time_sim1[i] <- regression.pl_results$Time
+  
+  ## chain 1
+  regression.pl_Theta_MAE_sim1[i] <- regression.pl_results$Theta_MAE
+  regression.pl_Theta_diag_MAE_sim1[i] <- regression.pl_results$Theta_diag_MAE
+  regression.pl_Theta_zeros_MAE_sim1[i] <- regression.pl_results$Theta_zeros_MAE
+  regression.pl_Theta_nonzeros_MAE_sim1[i] <- regression.pl_results$Theta_nonzeros_MAE
+  
+  regression.pl_p_MAE_sim1[i] <- regression.pl_results$p_MAE
+  regression.pl_p_zeros_MAE_sim1[i] <- regression.pl_results$p_zeros_MAE
+  regression.pl_p_nonzeros_MAE_sim1[i] <- regression.pl_results$p_nonzeros_MAE
+
+  
+  regression.pl_TP0.95_sim1[i] <- regression.pl_results$TP0.95
+  regression.pl_TN0.95_sim1[i] <- regression.pl_results$TN0.95
+  regression.pl_FP0.95_sim1[i] <- regression.pl_results$FP0.95
+  regression.pl_FN0.95_sim1[i] <- regression.pl_results$FN0.95
+  
+  regression.pl_AUC_sim1[i] <- regression.pl_results$AUC  
+  
+  regression.pl_coverage_sim1[i] <- regression.pl_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+ 
+   
+
+```
+
+```{r regression.pl_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+regression.pl_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("regression.pl", 6),
+  Type = rep("Pseudo", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(regression.pl_Theta_MAE_sim1), 
+           mean(regression.pl_AUC_sim1),
+           mean(FDR(regression.pl_FP0.95_sim1, regression.pl_TP0.95_sim1)),
+           mean(regression.pl_TP0.95_sim1/(regression.pl_FN0.95_sim1 + regression.pl_TP0.95_sim1), na.rm = TRUE),
+           mean(regression.pl_coverage_sim1),
+           mean(regression.pl_time_sim1)
+  ),
+  sd = c(sd(regression.pl_Theta_MAE_sim1)/sqrt(N_rep), 
+           sd(regression.pl_AUC_sim1)/sqrt(N_rep),
+           sd(FDR(regression.pl_FP0.95_sim1, regression.pl_TP0.95_sim1))/sqrt(N_rep),
+           sd(regression.pl_TP0.95_sim1/(regression.pl_FN0.95_sim1 + regression.pl_TP0.95_sim1), na.rm = TRUE)/sqrt(N_rep),
+           sd(regression.pl_coverage_sim1)/sqrt(N_rep),
+           sd(regression.pl_time_sim1)/sqrt(N_rep)
+  )
+)
+
+
+
+```
+
+## Comparisons
+
+```{r Final_Comparison_sim1_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+results_df_sim1 <- rbind(GLASSO_BIC_df_final, GLASSO_EBIC_df_final, ssgraph_df_final, bdgraph_df_final, bdgraph.mpl_df_final, Gibbs_df_final, GIMH_Gibbs_df_final, regression.pl_df_final)
+
+sim1_Final <- 
+results_df_sim1 |>
+  filter(Metric != "Time") |>
+  ggplot(aes(x = Metric, y = mean, col = Method, shape = Method)) + 
+  geom_point(position=position_dodge(width=0.5)) + 
+  geom_errorbar(aes(x = Metric, ymin = mean - 2*sd, ymax = mean + 2*sd), position=position_dodge(width=0.5)) +
+  scale_shape_manual(values = c(15, 16, 17, 18, 7, 11, 4, 8)) +
+  scale_color_manual(values = c("black", "darkgrey", "red", "blue", "darkgreen", "darkgreen", "darkgrey", "black")) +
+  ylab("Value") + 
+  ggtitle(paste0("Random-1/p: p = ", p, " n = ", n), subtitle = waiver())
+sim1_Final
+
+```
+
+
+# Random_2p {.tabset}
+
+
+```{r data_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+graph_type <- "random"
+graph_prob <- 2*1/p
+
+set.seed(2)
+
+Theta_sim <- list()
+data_y <- list()
+
+for(i in 1:N_rep){
+  ggm <- NA
+  while(is.list(ggm) == FALSE){
+    G <- generate_G(p, type = graph_type, graph_prob = graph_prob)
+    ggm <- generate_Theta_y(n, G, min_rho = 0.1, max_rho = 0.5)
+  }
+  Theta_sim[[i]] <- ggm$Theta
+  data_y[[i]] <- ggm$y
+}
+
+```
+
+## GLASSO (BIC)
+
+```{r GLASSO_BIC_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GLASSO_BIC_Theta_MAE_sim2 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_Theta_diag_MAE_sim2 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_Theta_zeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_Theta_nonzeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_TP_sim2 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_TN_sim2 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_FP_sim2 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_FN_sim2 <- array(NA, dim = c(N_rep))
+
+GLASSO_BIC_time_sim2 <- array(NA, dim = c(N_rep))
+
+for(i in 1:N_rep){
+
+  GLASSO_BIC <- GLASSO_inference(data_y[[i]], Theta_sim[[i]], criteria = 'bic')
+  
+  GLASSO_BIC_time_sim2[i] <- GLASSO_BIC$Time
+  
+  GLASSO_BIC_Theta_MAE_sim2[i] <- GLASSO_BIC$Theta_MAE
+  GLASSO_BIC_Theta_diag_MAE_sim2[i] <- GLASSO_BIC$Theta_diag_MAE
+  GLASSO_BIC_Theta_zeros_MAE_sim2[i] <- GLASSO_BIC$Theta_zeros_MAE
+  GLASSO_BIC_Theta_nonzeros_MAE_sim2[i] <- GLASSO_BIC$Theta_nonzeros_MAE
+  
+  GLASSO_BIC_TP_sim2[i] <- GLASSO_BIC$TP
+  GLASSO_BIC_TN_sim2[i] <- GLASSO_BIC$TN
+  GLASSO_BIC_FP_sim2[i] <- GLASSO_BIC$FP
+  GLASSO_BIC_FN_sim2[i] <- GLASSO_BIC$FN
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+
+}
+
+```
+
+```{r GLASSO_BIC_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GLASSO_BIC_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("GLASSO-BIC", 6),
+  Type = rep("Frequentist", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(GLASSO_BIC_Theta_MAE_sim2), 
+           NA,
+           mean(FDR(GLASSO_BIC_FP_sim2, GLASSO_BIC_TP_sim2)),
+           mean(GLASSO_BIC_TP_sim2/(GLASSO_BIC_FN_sim2 + GLASSO_BIC_TP_sim2), na.rm = TRUE),
+           NA,
+           mean(GLASSO_BIC_time_sim2)
+  ),
+  sd = c(sd(GLASSO_BIC_Theta_MAE_sim2)/sqrt(N_rep), 
+           NA,
+           sd(FDR(GLASSO_BIC_FP_sim2, GLASSO_BIC_TP_sim2))/sqrt(N_rep),
+           sd(GLASSO_BIC_TP_sim2/(GLASSO_BIC_FN_sim2 + GLASSO_BIC_TP_sim2), na.rm = TRUE)/sqrt(N_rep),
+           NA,
+           sd(GLASSO_BIC_time_sim2)/sqrt(N_rep)
+  )
+)
+
+```
+
+## GLASSO (EBIC)
+
+```{r GLASSO_EBIC_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GLASSO_EBIC_Theta_MAE_sim2 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_Theta_diag_MAE_sim2 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_Theta_zeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_Theta_nonzeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_TP_sim2 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_TN_sim2 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_FP_sim2 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_FN_sim2 <- array(NA, dim = c(N_rep))
+
+GLASSO_EBIC_time_sim2 <- array(NA, dim = c(N_rep))
+
+for(i in 1:N_rep){
+
+  GLASSO_EBIC <- GLASSO_inference(data_y[[i]], Theta_sim[[i]], criteria = 'ebic')
+  
+  GLASSO_EBIC_time_sim2[i] <- GLASSO_EBIC$Time
+  
+  GLASSO_EBIC_Theta_MAE_sim2[i] <- GLASSO_EBIC$Theta_MAE
+  GLASSO_EBIC_Theta_diag_MAE_sim2[i] <- GLASSO_EBIC$Theta_diag_MAE
+  GLASSO_EBIC_Theta_zeros_MAE_sim2[i] <- GLASSO_EBIC$Theta_zeros_MAE
+  GLASSO_EBIC_Theta_nonzeros_MAE_sim2[i] <- GLASSO_EBIC$Theta_nonzeros_MAE
+  
+  GLASSO_EBIC_TP_sim2[i] <- GLASSO_EBIC$TP
+  GLASSO_EBIC_TN_sim2[i] <- GLASSO_EBIC$TN
+  GLASSO_EBIC_FP_sim2[i] <- GLASSO_EBIC$FP
+  GLASSO_EBIC_FN_sim2[i] <- GLASSO_EBIC$FN
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+
+}
+
+```
+
+```{r GLASSO_EBIC_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GLASSO_EBIC_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("GLASSO-EBIC", 6),
+  Type = rep("Frequentist", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(GLASSO_EBIC_Theta_MAE_sim2), 
+           NA,
+           mean(FDR(GLASSO_EBIC_FP_sim2, GLASSO_EBIC_TP_sim2)),
+           mean(GLASSO_EBIC_TP_sim2/(GLASSO_EBIC_FN_sim2 + GLASSO_EBIC_TP_sim2), na.rm = TRUE),
+          NA,
+           mean(GLASSO_EBIC_time_sim2)
+  ),
+  sd = c(sd(GLASSO_EBIC_Theta_MAE_sim2)/sqrt(N_rep), 
+           NA,
+           sd(FDR(GLASSO_EBIC_FP_sim2, GLASSO_EBIC_TP_sim2))/sqrt(N_rep),
+           sd(GLASSO_EBIC_TP_sim2/(GLASSO_EBIC_FN_sim2 + GLASSO_EBIC_TP_sim2), na.rm = TRUE)/sqrt(N_rep),
+           NA,
+           sd(GLASSO_EBIC_time_sim2)/sqrt(N_rep)
+  )
+)
+
+```
+
+## ssgraph
+
+```{r ssgraph_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+ssgraph_Theta_MAE_sim2 <- array(NA, dim = c(N_rep))
+ssgraph_Theta_diag_MAE_sim2 <- array(NA, dim = c(N_rep))
+ssgraph_Theta_zeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+ssgraph_Theta_nonzeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+ssgraph_p_MAE_sim2 <- array(NA, dim = c(N_rep))
+ssgraph_p_zeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+ssgraph_p_nonzeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+
+ssgraph_TP0.95_sim2 <- array(NA, dim = c(N_rep))
+ssgraph_TN0.95_sim2 <- array(NA, dim = c(N_rep))
+ssgraph_FP0.95_sim2 <- array(NA, dim = c(N_rep))
+ssgraph_FN0.95_sim2 <- array(NA, dim = c(N_rep))
+
+ssgraph_AUC_sim2 <- array(NA, dim = c(N_rep))
+
+ssgraph_time_sim2 <- array(NA, dim = c(N_rep))
+
+ssgraph_coverage_sim2 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  ssgraph_results <- ssgraph_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, s_spike = 2e-02)
+  
+  ssgraph_time_sim2[i] <- ssgraph_results$Time
+  
+  ## chain 1
+  ssgraph_Theta_MAE_sim2[i] <- ssgraph_results$Theta_MAE
+  ssgraph_Theta_diag_MAE_sim2[i] <- ssgraph_results$Theta_diag_MAE
+  ssgraph_Theta_zeros_MAE_sim2[i] <- ssgraph_results$Theta_zeros_MAE
+  ssgraph_Theta_nonzeros_MAE_sim2[i] <- ssgraph_results$Theta_nonzeros_MAE
+  
+  ssgraph_p_MAE_sim2[i] <- ssgraph_results$p_MAE
+  ssgraph_p_zeros_MAE_sim2[i] <- ssgraph_results$p_zeros_MAE
+  ssgraph_p_nonzeros_MAE_sim2[i] <- ssgraph_results$p_nonzeros_MAE
+  
+  ssgraph_TP0.95_sim2[i] <- ssgraph_results$TP0.95
+  ssgraph_TN0.95_sim2[i] <- ssgraph_results$TN0.95
+  ssgraph_FP0.95_sim2[i] <- ssgraph_results$FP0.95
+  ssgraph_FN0.95_sim2[i] <- ssgraph_results$FN0.95
+  
+  ssgraph_AUC_sim2[i] <- ssgraph_results$AUC  
+  
+  #ssgraph_coverage_sim2[i] <- ssgraph_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r ssgraph_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+ssgraph_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("ssgraph", 6),
+  Type = rep("Local-Prev", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(ssgraph_Theta_MAE_sim2), 
+           mean(ssgraph_AUC_sim2),
+           mean(FDR(ssgraph_FP0.95_sim2, ssgraph_TP0.95_sim2)),
+           mean(ssgraph_TP0.95_sim2/(ssgraph_FN0.95_sim2 + ssgraph_TP0.95_sim2), na.rm = TRUE),
+           mean(ssgraph_coverage_sim2),
+           mean(ssgraph_time_sim2)
+  ),
+  sd = c(sd(ssgraph_Theta_MAE_sim2)/sqrt(N_rep), 
+           sd(ssgraph_AUC_sim2)/sqrt(N_rep),
+           sd(FDR(ssgraph_FP0.95_sim2, ssgraph_TP0.95_sim2))/sqrt(N_rep),
+           sd(ssgraph_TP0.95_sim2/(ssgraph_FN0.95_sim2 + ssgraph_TP0.95_sim2), na.rm = TRUE)/sqrt(N_rep),
+           sd(ssgraph_coverage_sim2)/sqrt(N_rep),
+           sd(ssgraph_time_sim2)/sqrt(N_rep)
+  )
+)
+
+
+
+```
+
+## bdgraph
+
+Each iteration of bdgraph only updates one element, should at least scale this by the number of rows
+
+```{r bdgraph_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph_Theta_MAE_sim2 <- array(NA, dim = c(N_rep))
+bdgraph_Theta_diag_MAE_sim2 <- array(NA, dim = c(N_rep))
+bdgraph_Theta_zeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+bdgraph_Theta_nonzeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+bdgraph_p_MAE_sim2 <- array(NA, dim = c(N_rep))
+bdgraph_p_zeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+bdgraph_p_nonzeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+
+bdgraph_TP0.95_sim2 <- array(NA, dim = c(N_rep))
+bdgraph_TN0.95_sim2 <- array(NA, dim = c(N_rep))
+bdgraph_FP0.95_sim2 <- array(NA, dim = c(N_rep))
+bdgraph_FN0.95_sim2 <- array(NA, dim = c(N_rep))
+
+bdgraph_AUC_sim2 <- array(NA, dim = c(N_rep))
+
+bdgraph_time_sim2 <- array(NA, dim = c(N_rep))
+
+bdgraph_coverage_sim2 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  bdgraph_results <- bdgraph_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab)
+  
+  bdgraph_time_sim2[i] <- bdgraph_results$Time
+  
+  ## chain 1
+  bdgraph_Theta_MAE_sim2[i] <- bdgraph_results$Theta_MAE
+  bdgraph_Theta_diag_MAE_sim2[i] <- bdgraph_results$Theta_diag_MAE
+  bdgraph_Theta_zeros_MAE_sim2[i] <- bdgraph_results$Theta_zeros_MAE
+  bdgraph_Theta_nonzeros_MAE_sim2[i] <- bdgraph_results$Theta_nonzeros_MAE
+  
+  bdgraph_p_MAE_sim2[i] <- bdgraph_results$p_MAE
+  bdgraph_p_zeros_MAE_sim2[i] <- bdgraph_results$p_zeros_MAE
+  bdgraph_p_nonzeros_MAE_sim2[i] <- bdgraph_results$p_nonzeros_MAE
+  
+  bdgraph_TP0.95_sim2[i] <- bdgraph_results$TP0.95
+  bdgraph_TN0.95_sim2[i] <- bdgraph_results$TN0.95
+  bdgraph_FP0.95_sim2[i] <- bdgraph_results$FP0.95
+  bdgraph_FN0.95_sim2[i] <- bdgraph_results$FN0.95
+  
+  bdgraph_AUC_sim2[i] <- bdgraph_results$AUC  
+  
+  bdgraph_coverage_sim2[i] <- bdgraph_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r bdgraph_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+bdgraph_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("bdgraph", 6),
+  Type = rep("Local-Prev", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(bdgraph_Theta_MAE_sim2), 
+           mean(bdgraph_AUC_sim2),
+           mean(FDR(bdgraph_FP0.95_sim2, bdgraph_TP0.95_sim2)),
+           mean(bdgraph_TP0.95_sim2/(bdgraph_FN0.95_sim2 + bdgraph_TP0.95_sim2), na.rm = TRUE),
+           mean(bdgraph_coverage_sim2),
+           mean(bdgraph_time_sim2)
+  ),
+  sd = c(sd(bdgraph_Theta_MAE_sim2)/sqrt(N_rep), 
+           sd(bdgraph_AUC_sim2)/sqrt(N_rep),
+           sd(FDR(bdgraph_FP0.95_sim2, bdgraph_TP0.95_sim2))/sqrt(N_rep),
+           sd(bdgraph_TP0.95_sim2/(bdgraph_FN0.95_sim2 + bdgraph_TP0.95_sim2), na.rm = TRUE)/sqrt(N_rep),
+           sd(bdgraph_coverage_sim2)/sqrt(N_rep),
+           sd(bdgraph_time_sim2)/sqrt(N_rep)
+  )
+)
+
+```
+
+## bdgraph.mpl
+
+Just going from save=FALSE to save=TRUE increases the computation a lot
+
+```{r bdgraph.mpl_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph.mpl_Theta_MAE_sim2 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_Theta_diag_MAE_sim2 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_Theta_zeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_Theta_nonzeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_p_MAE_sim2 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_p_zeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_p_nonzeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_TP0.95_sim2 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_TN0.95_sim2 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_FP0.95_sim2 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_FN0.95_sim2 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_AUC_sim2 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_time_sim2 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_coverage_sim2 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  bdgraph.mpl_results <- bdgraph.mpl_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab)
+  
+  bdgraph.mpl_time_sim2[i] <- bdgraph.mpl_results$Time
+  
+  ## chain 1
+  bdgraph.mpl_Theta_MAE_sim2[i] <- bdgraph.mpl_results$Theta_MAE
+  bdgraph.mpl_Theta_diag_MAE_sim2[i] <- bdgraph.mpl_results$Theta_diag_MAE
+  bdgraph.mpl_Theta_zeros_MAE_sim2[i] <- bdgraph.mpl_results$Theta_zeros_MAE
+  bdgraph.mpl_Theta_nonzeros_MAE_sim2[i] <- bdgraph.mpl_results$Theta_nonzeros_MAE
+  
+  bdgraph.mpl_p_MAE_sim2[i] <- bdgraph.mpl_results$p_MAE
+  bdgraph.mpl_p_zeros_MAE_sim2[i] <- bdgraph.mpl_results$p_zeros_MAE
+  bdgraph.mpl_p_nonzeros_MAE_sim2[i] <- bdgraph.mpl_results$p_nonzeros_MAE
+  
+  bdgraph.mpl_TP0.95_sim2[i] <- bdgraph.mpl_results$TP0.95
+  bdgraph.mpl_TN0.95_sim2[i] <- bdgraph.mpl_results$TN0.95
+  bdgraph.mpl_FP0.95_sim2[i] <- bdgraph.mpl_results$FP0.95
+  bdgraph.mpl_FN0.95_sim2[i] <- bdgraph.mpl_results$FN0.95
+  
+  bdgraph.mpl_AUC_sim2[i] <- bdgraph.mpl_results$AUC  
+  
+  bdgraph.mpl_coverage_sim2[i] <- bdgraph.mpl_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+   
+ 
+
+```
+
+```{r bdgraph.mpl_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph.mpl_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("bdgraph.mpl", 6),
+  Type = rep("Pseudo", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(bdgraph.mpl_Theta_MAE_sim2), 
+           mean(bdgraph.mpl_AUC_sim2),
+           mean(FDR(bdgraph.mpl_FP0.95_sim2, bdgraph.mpl_TP0.95_sim2)),
+           mean(bdgraph.mpl_TP0.95_sim2/(bdgraph.mpl_FN0.95_sim2 + bdgraph.mpl_TP0.95_sim2), na.rm = TRUE),
+           mean(bdgraph.mpl_coverage_sim2),
+           mean(bdgraph.mpl_time_sim2)
+  ),
+  sd = c(sd(bdgraph.mpl_Theta_MAE_sim2)/sqrt(N_rep), 
+           sd(bdgraph.mpl_AUC_sim2)/sqrt(N_rep),
+           sd(FDR(bdgraph.mpl_FP0.95_sim2, bdgraph.mpl_TP0.95_sim2))/sqrt(N_rep),
+           sd(bdgraph.mpl_TP0.95_sim2/(bdgraph.mpl_FN0.95_sim2 + bdgraph.mpl_TP0.95_sim2), na.rm = TRUE)/sqrt(N_rep),
+           sd(bdgraph.mpl_coverage_sim2)/sqrt(N_rep),
+           sd(bdgraph.mpl_time_sim2)/sqrt(N_rep)
+  )
+)
+
+
+
+```
+
+## Gibbs
+
+```{r Gibbs_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+Gibbs_Theta_MAE_sim2 <- array(NA, dim = c(N_rep))
+Gibbs_Theta_diag_MAE_sim2 <- array(NA, dim = c(N_rep))
+Gibbs_Theta_zeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+Gibbs_Theta_nonzeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+Gibbs_p_MAE_sim2 <- array(NA, dim = c(N_rep))
+Gibbs_p_zeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+Gibbs_p_nonzeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+
+Gibbs_TP0.95_sim2 <- array(NA, dim = c(N_rep))
+Gibbs_TN0.95_sim2 <- array(NA, dim = c(N_rep))
+Gibbs_FP0.95_sim2 <- array(NA, dim = c(N_rep))
+Gibbs_FN0.95_sim2 <- array(NA, dim = c(N_rep))
+
+Gibbs_AUC_sim2 <- array(NA, dim = c(N_rep))
+
+Gibbs_time_sim2 <- array(NA, dim = c(N_rep))
+
+Gibbs_coverage_sim2 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  Gibbs_results <- Gibbs_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  Gibbs_time_sim2[i] <- Gibbs_results$Time
+  
+  ## chain 1
+  Gibbs_Theta_MAE_sim2[i] <- Gibbs_results$Theta_MAE
+  Gibbs_Theta_diag_MAE_sim2[i] <- Gibbs_results$Theta_diag_MAE
+  Gibbs_Theta_zeros_MAE_sim2[i] <- Gibbs_results$Theta_zeros_MAE
+  Gibbs_Theta_nonzeros_MAE_sim2[i] <- Gibbs_results$Theta_nonzeros_MAE
+  
+  Gibbs_p_MAE_sim2[i] <- Gibbs_results$p_MAE
+  Gibbs_p_zeros_MAE_sim2[i] <- Gibbs_results$p_zeros_MAE
+  Gibbs_p_nonzeros_MAE_sim2[i] <- Gibbs_results$p_nonzeros_MAE
+  
+  Gibbs_TP0.95_sim2[i] <- Gibbs_results$TP0.95
+  Gibbs_TN0.95_sim2[i] <- Gibbs_results$TN0.95
+  Gibbs_FP0.95_sim2[i] <- Gibbs_results$FP0.95
+  Gibbs_FN0.95_sim2[i] <- Gibbs_results$FN0.95
+  
+  Gibbs_AUC_sim2[i] <- Gibbs_results$AUC  
+  
+  Gibbs_coverage_sim2[i] <- Gibbs_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r Gibbs_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+Gibbs_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("Gibbs", 6),
+  Type = rep("Local-New", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(Gibbs_Theta_MAE_sim2), 
+           mean(Gibbs_AUC_sim2),
+           mean(FDR(Gibbs_FP0.95_sim2, Gibbs_TP0.95_sim2)),
+           mean(Gibbs_TP0.95_sim2/(Gibbs_FN0.95_sim2 + Gibbs_TP0.95_sim2), na.rm = TRUE),
+           mean(Gibbs_coverage_sim2),
+           mean(Gibbs_time_sim2)
+  ),
+  sd = c(sd(Gibbs_Theta_MAE_sim2)/sqrt(N_rep), 
+           sd(Gibbs_AUC_sim2)/sqrt(N_rep),
+           sd(FDR(Gibbs_FP0.95_sim2, Gibbs_TP0.95_sim2))/sqrt(N_rep),
+           sd(Gibbs_TP0.95_sim2/(Gibbs_FN0.95_sim2 + Gibbs_TP0.95_sim2), na.rm = TRUE)/sqrt(N_rep),
+           sd(Gibbs_coverage_sim2)/sqrt(N_rep),
+           sd(Gibbs_time_sim2)/sqrt(N_rep)
+  )
+)
+
+
+```
+
+## GIMH ($\upsilon = 0.75$)
+
+```{r GIMH_Gibbs_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GIMH_Gibbs_Theta_MAE_sim2 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_Theta_diag_MAE_sim2 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_Theta_zeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_Theta_nonzeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_p_MAE_sim2 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_p_zeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_p_nonzeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_TP0.95_sim2 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_TN0.95_sim2 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_FP0.95_sim2 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_FN0.95_sim2 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_AUC_sim2 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_time_sim2 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_coverage_sim2 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  GIMH_Gibbs_results <- GIMH_Gibbs_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, tempering = 0.75)
+  
+  GIMH_Gibbs_time_sim2[i] <- GIMH_Gibbs_results$Time
+  
+  ## chain 1
+  GIMH_Gibbs_Theta_MAE_sim2[i] <- GIMH_Gibbs_results$Theta_MAE
+  GIMH_Gibbs_Theta_diag_MAE_sim2[i] <- GIMH_Gibbs_results$Theta_diag_MAE
+  GIMH_Gibbs_Theta_zeros_MAE_sim2[i] <- GIMH_Gibbs_results$Theta_zeros_MAE
+  GIMH_Gibbs_Theta_nonzeros_MAE_sim2[i] <- GIMH_Gibbs_results$Theta_nonzeros_MAE
+  
+  GIMH_Gibbs_p_MAE_sim2[i] <- GIMH_Gibbs_results$p_MAE
+  GIMH_Gibbs_p_zeros_MAE_sim2[i] <- GIMH_Gibbs_results$p_zeros_MAE
+  GIMH_Gibbs_p_nonzeros_MAE_sim2[i] <- GIMH_Gibbs_results$p_nonzeros_MAE
+
+  
+  GIMH_Gibbs_TP0.95_sim2[i] <- GIMH_Gibbs_results$TP0.95
+  GIMH_Gibbs_TN0.95_sim2[i] <- GIMH_Gibbs_results$TN0.95
+  GIMH_Gibbs_FP0.95_sim2[i] <- GIMH_Gibbs_results$FP0.95
+  GIMH_Gibbs_FN0.95_sim2[i] <- GIMH_Gibbs_results$FN0.95
+  
+  GIMH_Gibbs_AUC_sim2[i] <- GIMH_Gibbs_results$AUC  
+  
+  GIMH_Gibbs_coverage_sim2[i] <- GIMH_Gibbs_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r GIMH_Gibbs_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+GIMH_Gibbs_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("GIMH", 6),
+  Type = rep("Local-New", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(GIMH_Gibbs_Theta_MAE_sim2), 
+           mean(GIMH_Gibbs_AUC_sim2),
+           mean(FDR(GIMH_Gibbs_FP0.95_sim2, GIMH_Gibbs_TP0.95_sim2)),
+           mean(GIMH_Gibbs_TP0.95_sim2/(GIMH_Gibbs_FN0.95_sim2 + GIMH_Gibbs_TP0.95_sim2), na.rm = TRUE),
+           mean(GIMH_Gibbs_coverage_sim2),
+           mean(GIMH_Gibbs_time_sim2)
+  ),
+  sd = c(sd(GIMH_Gibbs_Theta_MAE_sim2)/sqrt(N_rep), 
+           sd(GIMH_Gibbs_AUC_sim2)/sqrt(N_rep),
+           sd(FDR(GIMH_Gibbs_FP0.95_sim2, GIMH_Gibbs_TP0.95_sim2))/sqrt(N_rep),
+           sd(GIMH_Gibbs_TP0.95_sim2/(GIMH_Gibbs_FN0.95_sim2 + GIMH_Gibbs_TP0.95_sim2), na.rm = TRUE)/sqrt(N_rep),
+           sd(GIMH_Gibbs_coverage_sim2)/sqrt(N_rep),
+           sd(GIMH_Gibbs_time_sim2)/sqrt(N_rep)
+  )
+)
+
+```
+
+## regression.pl
+
+```{r regression.pl_sim2, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+regression.pl_Theta_MAE_sim2 <- array(NA, dim = c(N_rep))
+regression.pl_Theta_diag_MAE_sim2 <- array(NA, dim = c(N_rep))
+regression.pl_Theta_zeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+regression.pl_Theta_nonzeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+regression.pl_p_MAE_sim2 <- array(NA, dim = c(N_rep))
+regression.pl_p_zeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+regression.pl_p_nonzeros_MAE_sim2 <- array(NA, dim = c(N_rep))
+
+regression.pl_TP0.95_sim2 <- array(NA, dim = c(N_rep))
+regression.pl_TN0.95_sim2 <- array(NA, dim = c(N_rep))
+regression.pl_FP0.95_sim2 <- array(NA, dim = c(N_rep))
+regression.pl_FN0.95_sim2 <- array(NA, dim = c(N_rep))
+
+regression.pl_AUC_sim2 <- array(NA, dim = c(N_rep))
+
+regression.pl_time_sim2 <- array(NA, dim = c(N_rep))
+
+regression.pl_coverage_sim2 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  regression.pl_results <- regression.pl_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  regression.pl_time_sim2[i] <- regression.pl_results$Time
+  
+  ## chain 1
+  regression.pl_Theta_MAE_sim2[i] <- regression.pl_results$Theta_MAE
+  regression.pl_Theta_diag_MAE_sim2[i] <- regression.pl_results$Theta_diag_MAE
+  regression.pl_Theta_zeros_MAE_sim2[i] <- regression.pl_results$Theta_zeros_MAE
+  regression.pl_Theta_nonzeros_MAE_sim2[i] <- regression.pl_results$Theta_nonzeros_MAE
+  
+  regression.pl_p_MAE_sim2[i] <- regression.pl_results$p_MAE
+  regression.pl_p_zeros_MAE_sim2[i] <- regression.pl_results$p_zeros_MAE
+  regression.pl_p_nonzeros_MAE_sim2[i] <- regression.pl_results$p_nonzeros_MAE
+
+  
+  regression.pl_TP0.95_sim2[i] <- regression.pl_results$TP0.95
+  regression.pl_TN0.95_sim2[i] <- regression.pl_results$TN0.95
+  regression.pl_FP0.95_sim2[i] <- regression.pl_results$FP0.95
+  regression.pl_FN0.95_sim2[i] <- regression.pl_results$FN0.95
+  
+  regression.pl_AUC_sim2[i] <- regression.pl_results$AUC  
+  
+  regression.pl_coverage_sim2[i] <- regression.pl_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+ 
+   
+
+```
+
+```{r regression.pl_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+regression.pl_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("regression.pl", 6),
+  Type = rep("Pseudo", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(regression.pl_Theta_MAE_sim2), 
+           mean(regression.pl_AUC_sim2),
+           mean(FDR(regression.pl_FP0.95_sim2, regression.pl_TP0.95_sim2)),
+           mean(regression.pl_TP0.95_sim2/(regression.pl_FN0.95_sim2 + regression.pl_TP0.95_sim2), na.rm = TRUE),
+           mean(regression.pl_coverage_sim2),
+           mean(regression.pl_time_sim2)
+  ),
+  sd = c(sd(regression.pl_Theta_MAE_sim2)/sqrt(N_rep), 
+           sd(regression.pl_AUC_sim2)/sqrt(N_rep),
+           sd(FDR(regression.pl_FP0.95_sim2, regression.pl_TP0.95_sim2))/sqrt(N_rep),
+           sd(regression.pl_TP0.95_sim2/(regression.pl_FN0.95_sim2 + regression.pl_TP0.95_sim2), na.rm = TRUE)/sqrt(N_rep),
+           sd(regression.pl_coverage_sim2)/sqrt(N_rep),
+           sd(regression.pl_time_sim2)/sqrt(N_rep)
+  )
+)
+
+
+
+```
+
+## Comparisons
+
+```{r Final_Comparison_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+results_df_sim2 <- rbind(GLASSO_BIC_df_final, GLASSO_EBIC_df_final, ssgraph_df_final, bdgraph_df_final, bdgraph.mpl_df_final, Gibbs_df_final, GIMH_Gibbs_df_final, regression.pl_df_final)
+
+sim2_Final <- 
+results_df_sim2 |>
+  filter(Metric != "Time") |>
+  ggplot(aes(x = Metric, y = mean, col = Method, shape = Method)) + 
+  geom_point(position=position_dodge(width=0.5)) + 
+  geom_errorbar(aes(x = Metric, ymin = mean - 2*sd, ymax = mean + 2*sd), position=position_dodge(width=0.5)) +
+  scale_shape_manual(values = c(15, 16, 17, 18, 7, 11, 4, 8)) +
+  scale_color_manual(values = c("black", "darkgrey", "red", "blue", "darkgreen", "darkgreen", "darkgrey", "black")) +
+  ylab("Value") + 
+  ggtitle(paste0("Random-1/p: p = ", p, " n = ", n), subtitle = waiver())
+sim2_Final
+
+```
+
+
+
+# Tridiagonal   {.tabset}
+
+
+```{r data_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+graph_type <- "tridiagonal"
+size <- p
+
+set.seed(3)
+
+Theta_sim <- list()
+data_y <- list()
+
+for(i in 1:N_rep){
+  ggm <- NA
+  while(is.list(ggm) == FALSE){
+    G <- generate_G(p, type = graph_type, size = size)
+    ggm <- generate_Theta_y(n, G, min_rho = 0.1, max_rho = 0.5)
+  }
+  Theta_sim[[i]] <- ggm$Theta
+  data_y[[i]] <- ggm$y
+}
+
+```
+
+## GLASSO (BIC)
+
+```{r GLASSO_BIC_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GLASSO_BIC_Theta_MAE_sim3 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_Theta_diag_MAE_sim3 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_Theta_zeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_Theta_nonzeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_TP_sim3 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_TN_sim3 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_FP_sim3 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_FN_sim3 <- array(NA, dim = c(N_rep))
+
+GLASSO_BIC_time_sim3 <- array(NA, dim = c(N_rep))
+
+for(i in 1:N_rep){
+
+  GLASSO_BIC <- GLASSO_inference(data_y[[i]], Theta_sim[[i]], criteria = 'bic')
+  
+  GLASSO_BIC_time_sim3[i] <- GLASSO_BIC$Time
+  
+  GLASSO_BIC_Theta_MAE_sim3[i] <- GLASSO_BIC$Theta_MAE
+  GLASSO_BIC_Theta_diag_MAE_sim3[i] <- GLASSO_BIC$Theta_diag_MAE
+  GLASSO_BIC_Theta_zeros_MAE_sim3[i] <- GLASSO_BIC$Theta_zeros_MAE
+  GLASSO_BIC_Theta_nonzeros_MAE_sim3[i] <- GLASSO_BIC$Theta_nonzeros_MAE
+  
+  GLASSO_BIC_TP_sim3[i] <- GLASSO_BIC$TP
+  GLASSO_BIC_TN_sim3[i] <- GLASSO_BIC$TN
+  GLASSO_BIC_FP_sim3[i] <- GLASSO_BIC$FP
+  GLASSO_BIC_FN_sim3[i] <- GLASSO_BIC$FN
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+
+}
+
+```
+
+```{r GLASSO_BIC_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GLASSO_BIC_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("GLASSO-BIC", 6),
+  Type = rep("Frequentist", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(GLASSO_BIC_Theta_MAE_sim3), 
+           NA,
+           mean(FDR(GLASSO_BIC_FP_sim3, GLASSO_BIC_TP_sim3)),
+           mean(GLASSO_BIC_TP_sim3/(GLASSO_BIC_FN_sim3 + GLASSO_BIC_TP_sim3), na.rm = TRUE),
+           NA,
+           mean(GLASSO_BIC_time_sim3)
+  ),
+  sd = c(sd(GLASSO_BIC_Theta_MAE_sim3)/sqrt(N_rep), 
+           NA,
+           sd(FDR(GLASSO_BIC_FP_sim3, GLASSO_BIC_TP_sim3))/sqrt(N_rep),
+           sd(GLASSO_BIC_TP_sim3/(GLASSO_BIC_FN_sim3 + GLASSO_BIC_TP_sim3), na.rm = TRUE)/sqrt(N_rep),
+           NA,
+           sd(GLASSO_BIC_time_sim3)/sqrt(N_rep)
+  )
+)
+
+```
+
+## GLASSO (EBIC)
+
+```{r GLASSO_EBIC_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GLASSO_EBIC_Theta_MAE_sim3 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_Theta_diag_MAE_sim3 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_Theta_zeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_Theta_nonzeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_TP_sim3 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_TN_sim3 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_FP_sim3 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_FN_sim3 <- array(NA, dim = c(N_rep))
+
+GLASSO_EBIC_time_sim3 <- array(NA, dim = c(N_rep))
+
+for(i in 1:N_rep){
+
+  GLASSO_EBIC <- GLASSO_inference(data_y[[i]], Theta_sim[[i]], criteria = 'ebic')
+  
+  GLASSO_EBIC_time_sim3[i] <- GLASSO_EBIC$Time
+  
+  GLASSO_EBIC_Theta_MAE_sim3[i] <- GLASSO_EBIC$Theta_MAE
+  GLASSO_EBIC_Theta_diag_MAE_sim3[i] <- GLASSO_EBIC$Theta_diag_MAE
+  GLASSO_EBIC_Theta_zeros_MAE_sim3[i] <- GLASSO_EBIC$Theta_zeros_MAE
+  GLASSO_EBIC_Theta_nonzeros_MAE_sim3[i] <- GLASSO_EBIC$Theta_nonzeros_MAE
+  
+  GLASSO_EBIC_TP_sim3[i] <- GLASSO_EBIC$TP
+  GLASSO_EBIC_TN_sim3[i] <- GLASSO_EBIC$TN
+  GLASSO_EBIC_FP_sim3[i] <- GLASSO_EBIC$FP
+  GLASSO_EBIC_FN_sim3[i] <- GLASSO_EBIC$FN
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+
+}
+
+```
+
+```{r GLASSO_EBIC_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GLASSO_EBIC_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("GLASSO-EBIC", 6),
+  Type = rep("Frequentist", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(GLASSO_EBIC_Theta_MAE_sim3), 
+           NA,
+           mean(FDR(GLASSO_EBIC_FP_sim3, GLASSO_EBIC_TP_sim3)),
+           mean(GLASSO_EBIC_TP_sim3/(GLASSO_EBIC_FN_sim3 + GLASSO_EBIC_TP_sim3), na.rm = TRUE),
+          NA,
+           mean(GLASSO_EBIC_time_sim3)
+  ),
+  sd = c(sd(GLASSO_EBIC_Theta_MAE_sim3)/sqrt(N_rep), 
+           NA,
+           sd(FDR(GLASSO_EBIC_FP_sim3, GLASSO_EBIC_TP_sim3))/sqrt(N_rep),
+           sd(GLASSO_EBIC_TP_sim3/(GLASSO_EBIC_FN_sim3 + GLASSO_EBIC_TP_sim3), na.rm = TRUE)/sqrt(N_rep),
+           NA,
+           sd(GLASSO_EBIC_time_sim3)/sqrt(N_rep)
+  )
+)
+
+```
+
+## ssgraph
+
+```{r ssgraph_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+ssgraph_Theta_MAE_sim3 <- array(NA, dim = c(N_rep))
+ssgraph_Theta_diag_MAE_sim3 <- array(NA, dim = c(N_rep))
+ssgraph_Theta_zeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+ssgraph_Theta_nonzeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+ssgraph_p_MAE_sim3 <- array(NA, dim = c(N_rep))
+ssgraph_p_zeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+ssgraph_p_nonzeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+
+ssgraph_TP0.95_sim3 <- array(NA, dim = c(N_rep))
+ssgraph_TN0.95_sim3 <- array(NA, dim = c(N_rep))
+ssgraph_FP0.95_sim3 <- array(NA, dim = c(N_rep))
+ssgraph_FN0.95_sim3 <- array(NA, dim = c(N_rep))
+
+ssgraph_AUC_sim3 <- array(NA, dim = c(N_rep))
+
+ssgraph_time_sim3 <- array(NA, dim = c(N_rep))
+
+ssgraph_coverage_sim3 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  ssgraph_results <- ssgraph_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, s_spike = 2e-02)
+  
+  ssgraph_time_sim3[i] <- ssgraph_results$Time
+  
+  ## chain 1
+  ssgraph_Theta_MAE_sim3[i] <- ssgraph_results$Theta_MAE
+  ssgraph_Theta_diag_MAE_sim3[i] <- ssgraph_results$Theta_diag_MAE
+  ssgraph_Theta_zeros_MAE_sim3[i] <- ssgraph_results$Theta_zeros_MAE
+  ssgraph_Theta_nonzeros_MAE_sim3[i] <- ssgraph_results$Theta_nonzeros_MAE
+  
+  ssgraph_p_MAE_sim3[i] <- ssgraph_results$p_MAE
+  ssgraph_p_zeros_MAE_sim3[i] <- ssgraph_results$p_zeros_MAE
+  ssgraph_p_nonzeros_MAE_sim3[i] <- ssgraph_results$p_nonzeros_MAE
+  
+  ssgraph_TP0.95_sim3[i] <- ssgraph_results$TP0.95
+  ssgraph_TN0.95_sim3[i] <- ssgraph_results$TN0.95
+  ssgraph_FP0.95_sim3[i] <- ssgraph_results$FP0.95
+  ssgraph_FN0.95_sim3[i] <- ssgraph_results$FN0.95
+  
+  ssgraph_AUC_sim3[i] <- ssgraph_results$AUC  
+  
+  #ssgraph_coverage_sim3[i] <- ssgraph_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r ssgraph_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+ssgraph_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("ssgraph", 6),
+  Type = rep("Local-Prev", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(ssgraph_Theta_MAE_sim3), 
+           mean(ssgraph_AUC_sim3),
+           mean(FDR(ssgraph_FP0.95_sim3, ssgraph_TP0.95_sim3)),
+           mean(ssgraph_TP0.95_sim3/(ssgraph_FN0.95_sim3 + ssgraph_TP0.95_sim3), na.rm = TRUE),
+           mean(ssgraph_coverage_sim3),
+           mean(ssgraph_time_sim3)
+  ),
+  sd = c(sd(ssgraph_Theta_MAE_sim3)/sqrt(N_rep), 
+           sd(ssgraph_AUC_sim3)/sqrt(N_rep),
+           sd(FDR(ssgraph_FP0.95_sim3, ssgraph_TP0.95_sim3))/sqrt(N_rep),
+           sd(ssgraph_TP0.95_sim3/(ssgraph_FN0.95_sim3 + ssgraph_TP0.95_sim3), na.rm = TRUE)/sqrt(N_rep),
+           sd(ssgraph_coverage_sim3)/sqrt(N_rep),
+           sd(ssgraph_time_sim3)/sqrt(N_rep)
+  )
+)
+
+
+
+```
+
+## bdgraph
+
+Each iteration of bdgraph only updates one element, should at least scale this by the number of rows
+
+```{r bdgraph_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph_Theta_MAE_sim3 <- array(NA, dim = c(N_rep))
+bdgraph_Theta_diag_MAE_sim3 <- array(NA, dim = c(N_rep))
+bdgraph_Theta_zeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+bdgraph_Theta_nonzeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+bdgraph_p_MAE_sim3 <- array(NA, dim = c(N_rep))
+bdgraph_p_zeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+bdgraph_p_nonzeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+
+bdgraph_TP0.95_sim3 <- array(NA, dim = c(N_rep))
+bdgraph_TN0.95_sim3 <- array(NA, dim = c(N_rep))
+bdgraph_FP0.95_sim3 <- array(NA, dim = c(N_rep))
+bdgraph_FN0.95_sim3 <- array(NA, dim = c(N_rep))
+
+bdgraph_AUC_sim3 <- array(NA, dim = c(N_rep))
+
+bdgraph_time_sim3 <- array(NA, dim = c(N_rep))
+
+bdgraph_coverage_sim3 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  bdgraph_results <- bdgraph_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab)
+  
+  bdgraph_time_sim3[i] <- bdgraph_results$Time
+  
+  ## chain 1
+  bdgraph_Theta_MAE_sim3[i] <- bdgraph_results$Theta_MAE
+  bdgraph_Theta_diag_MAE_sim3[i] <- bdgraph_results$Theta_diag_MAE
+  bdgraph_Theta_zeros_MAE_sim3[i] <- bdgraph_results$Theta_zeros_MAE
+  bdgraph_Theta_nonzeros_MAE_sim3[i] <- bdgraph_results$Theta_nonzeros_MAE
+  
+  bdgraph_p_MAE_sim3[i] <- bdgraph_results$p_MAE
+  bdgraph_p_zeros_MAE_sim3[i] <- bdgraph_results$p_zeros_MAE
+  bdgraph_p_nonzeros_MAE_sim3[i] <- bdgraph_results$p_nonzeros_MAE
+  
+  bdgraph_TP0.95_sim3[i] <- bdgraph_results$TP0.95
+  bdgraph_TN0.95_sim3[i] <- bdgraph_results$TN0.95
+  bdgraph_FP0.95_sim3[i] <- bdgraph_results$FP0.95
+  bdgraph_FN0.95_sim3[i] <- bdgraph_results$FN0.95
+  
+  bdgraph_AUC_sim3[i] <- bdgraph_results$AUC  
+  
+  bdgraph_coverage_sim3[i] <- bdgraph_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r bdgraph_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+bdgraph_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("bdgraph", 6),
+  Type = rep("Local-Prev", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(bdgraph_Theta_MAE_sim3), 
+           mean(bdgraph_AUC_sim3),
+           mean(FDR(bdgraph_FP0.95_sim3, bdgraph_TP0.95_sim3)),
+           mean(bdgraph_TP0.95_sim3/(bdgraph_FN0.95_sim3 + bdgraph_TP0.95_sim3), na.rm = TRUE),
+           mean(bdgraph_coverage_sim3),
+           mean(bdgraph_time_sim3)
+  ),
+  sd = c(sd(bdgraph_Theta_MAE_sim3)/sqrt(N_rep), 
+           sd(bdgraph_AUC_sim3)/sqrt(N_rep),
+           sd(FDR(bdgraph_FP0.95_sim3, bdgraph_TP0.95_sim3))/sqrt(N_rep),
+           sd(bdgraph_TP0.95_sim3/(bdgraph_FN0.95_sim3 + bdgraph_TP0.95_sim3), na.rm = TRUE)/sqrt(N_rep),
+           sd(bdgraph_coverage_sim3)/sqrt(N_rep),
+           sd(bdgraph_time_sim3)/sqrt(N_rep)
+  )
+)
+
+```
+
+## bdgraph.mpl
+
+Just going from save=FALSE to save=TRUE increases the computation a lot
+
+```{r bdgraph.mpl_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph.mpl_Theta_MAE_sim3 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_Theta_diag_MAE_sim3 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_Theta_zeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_Theta_nonzeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_p_MAE_sim3 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_p_zeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_p_nonzeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_TP0.95_sim3 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_TN0.95_sim3 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_FP0.95_sim3 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_FN0.95_sim3 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_AUC_sim3 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_time_sim3 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_coverage_sim3 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  bdgraph.mpl_results <- bdgraph.mpl_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab)
+  
+  bdgraph.mpl_time_sim3[i] <- bdgraph.mpl_results$Time
+  
+  ## chain 1
+  bdgraph.mpl_Theta_MAE_sim3[i] <- bdgraph.mpl_results$Theta_MAE
+  bdgraph.mpl_Theta_diag_MAE_sim3[i] <- bdgraph.mpl_results$Theta_diag_MAE
+  bdgraph.mpl_Theta_zeros_MAE_sim3[i] <- bdgraph.mpl_results$Theta_zeros_MAE
+  bdgraph.mpl_Theta_nonzeros_MAE_sim3[i] <- bdgraph.mpl_results$Theta_nonzeros_MAE
+  
+  bdgraph.mpl_p_MAE_sim3[i] <- bdgraph.mpl_results$p_MAE
+  bdgraph.mpl_p_zeros_MAE_sim3[i] <- bdgraph.mpl_results$p_zeros_MAE
+  bdgraph.mpl_p_nonzeros_MAE_sim3[i] <- bdgraph.mpl_results$p_nonzeros_MAE
+  
+  bdgraph.mpl_TP0.95_sim3[i] <- bdgraph.mpl_results$TP0.95
+  bdgraph.mpl_TN0.95_sim3[i] <- bdgraph.mpl_results$TN0.95
+  bdgraph.mpl_FP0.95_sim3[i] <- bdgraph.mpl_results$FP0.95
+  bdgraph.mpl_FN0.95_sim3[i] <- bdgraph.mpl_results$FN0.95
+  
+  bdgraph.mpl_AUC_sim3[i] <- bdgraph.mpl_results$AUC  
+  
+  bdgraph.mpl_coverage_sim3[i] <- bdgraph.mpl_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+   
+ 
+
+```
+
+```{r bdgraph.mpl_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph.mpl_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("bdgraph.mpl", 6),
+  Type = rep("Pseudo", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(bdgraph.mpl_Theta_MAE_sim3), 
+           mean(bdgraph.mpl_AUC_sim3),
+           mean(FDR(bdgraph.mpl_FP0.95_sim3, bdgraph.mpl_TP0.95_sim3)),
+           mean(bdgraph.mpl_TP0.95_sim3/(bdgraph.mpl_FN0.95_sim3 + bdgraph.mpl_TP0.95_sim3), na.rm = TRUE),
+           mean(bdgraph.mpl_coverage_sim3),
+           mean(bdgraph.mpl_time_sim3)
+  ),
+  sd = c(sd(bdgraph.mpl_Theta_MAE_sim3)/sqrt(N_rep), 
+           sd(bdgraph.mpl_AUC_sim3)/sqrt(N_rep),
+           sd(FDR(bdgraph.mpl_FP0.95_sim3, bdgraph.mpl_TP0.95_sim3))/sqrt(N_rep),
+           sd(bdgraph.mpl_TP0.95_sim3/(bdgraph.mpl_FN0.95_sim3 + bdgraph.mpl_TP0.95_sim3), na.rm = TRUE)/sqrt(N_rep),
+           sd(bdgraph.mpl_coverage_sim3)/sqrt(N_rep),
+           sd(bdgraph.mpl_time_sim3)/sqrt(N_rep)
+  )
+)
+
+
+
+```
+
+## Gibbs
+
+```{r Gibbs_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+Gibbs_Theta_MAE_sim3 <- array(NA, dim = c(N_rep))
+Gibbs_Theta_diag_MAE_sim3 <- array(NA, dim = c(N_rep))
+Gibbs_Theta_zeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+Gibbs_Theta_nonzeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+Gibbs_p_MAE_sim3 <- array(NA, dim = c(N_rep))
+Gibbs_p_zeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+Gibbs_p_nonzeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+
+Gibbs_TP0.95_sim3 <- array(NA, dim = c(N_rep))
+Gibbs_TN0.95_sim3 <- array(NA, dim = c(N_rep))
+Gibbs_FP0.95_sim3 <- array(NA, dim = c(N_rep))
+Gibbs_FN0.95_sim3 <- array(NA, dim = c(N_rep))
+
+Gibbs_AUC_sim3 <- array(NA, dim = c(N_rep))
+
+Gibbs_time_sim3 <- array(NA, dim = c(N_rep))
+
+Gibbs_coverage_sim3 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  Gibbs_results <- Gibbs_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  Gibbs_time_sim3[i] <- Gibbs_results$Time
+  
+  ## chain 1
+  Gibbs_Theta_MAE_sim3[i] <- Gibbs_results$Theta_MAE
+  Gibbs_Theta_diag_MAE_sim3[i] <- Gibbs_results$Theta_diag_MAE
+  Gibbs_Theta_zeros_MAE_sim3[i] <- Gibbs_results$Theta_zeros_MAE
+  Gibbs_Theta_nonzeros_MAE_sim3[i] <- Gibbs_results$Theta_nonzeros_MAE
+  
+  Gibbs_p_MAE_sim3[i] <- Gibbs_results$p_MAE
+  Gibbs_p_zeros_MAE_sim3[i] <- Gibbs_results$p_zeros_MAE
+  Gibbs_p_nonzeros_MAE_sim3[i] <- Gibbs_results$p_nonzeros_MAE
+  
+  Gibbs_TP0.95_sim3[i] <- Gibbs_results$TP0.95
+  Gibbs_TN0.95_sim3[i] <- Gibbs_results$TN0.95
+  Gibbs_FP0.95_sim3[i] <- Gibbs_results$FP0.95
+  Gibbs_FN0.95_sim3[i] <- Gibbs_results$FN0.95
+  
+  Gibbs_AUC_sim3[i] <- Gibbs_results$AUC  
+  
+  Gibbs_coverage_sim3[i] <- Gibbs_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r Gibbs_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+Gibbs_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("Gibbs", 6),
+  Type = rep("Local-New", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(Gibbs_Theta_MAE_sim3), 
+           mean(Gibbs_AUC_sim3),
+           mean(FDR(Gibbs_FP0.95_sim3, Gibbs_TP0.95_sim3)),
+           mean(Gibbs_TP0.95_sim3/(Gibbs_FN0.95_sim3 + Gibbs_TP0.95_sim3), na.rm = TRUE),
+           mean(Gibbs_coverage_sim3),
+           mean(Gibbs_time_sim3)
+  ),
+  sd = c(sd(Gibbs_Theta_MAE_sim3)/sqrt(N_rep), 
+           sd(Gibbs_AUC_sim3)/sqrt(N_rep),
+           sd(FDR(Gibbs_FP0.95_sim3, Gibbs_TP0.95_sim3))/sqrt(N_rep),
+           sd(Gibbs_TP0.95_sim3/(Gibbs_FN0.95_sim3 + Gibbs_TP0.95_sim3), na.rm = TRUE)/sqrt(N_rep),
+           sd(Gibbs_coverage_sim3)/sqrt(N_rep),
+           sd(Gibbs_time_sim3)/sqrt(N_rep)
+  )
+)
+
+
+```
+
+## GIMH ($\upsilon = 0.75$)
+
+```{r GIMH_Gibbs_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GIMH_Gibbs_Theta_MAE_sim3 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_Theta_diag_MAE_sim3 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_Theta_zeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_Theta_nonzeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_p_MAE_sim3 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_p_zeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_p_nonzeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_TP0.95_sim3 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_TN0.95_sim3 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_FP0.95_sim3 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_FN0.95_sim3 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_AUC_sim3 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_time_sim3 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_coverage_sim3 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  GIMH_Gibbs_results <- GIMH_Gibbs_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, tempering = 0.75)
+  
+  GIMH_Gibbs_time_sim3[i] <- GIMH_Gibbs_results$Time
+  
+  ## chain 1
+  GIMH_Gibbs_Theta_MAE_sim3[i] <- GIMH_Gibbs_results$Theta_MAE
+  GIMH_Gibbs_Theta_diag_MAE_sim3[i] <- GIMH_Gibbs_results$Theta_diag_MAE
+  GIMH_Gibbs_Theta_zeros_MAE_sim3[i] <- GIMH_Gibbs_results$Theta_zeros_MAE
+  GIMH_Gibbs_Theta_nonzeros_MAE_sim3[i] <- GIMH_Gibbs_results$Theta_nonzeros_MAE
+  
+  GIMH_Gibbs_p_MAE_sim3[i] <- GIMH_Gibbs_results$p_MAE
+  GIMH_Gibbs_p_zeros_MAE_sim3[i] <- GIMH_Gibbs_results$p_zeros_MAE
+  GIMH_Gibbs_p_nonzeros_MAE_sim3[i] <- GIMH_Gibbs_results$p_nonzeros_MAE
+
+  
+  GIMH_Gibbs_TP0.95_sim3[i] <- GIMH_Gibbs_results$TP0.95
+  GIMH_Gibbs_TN0.95_sim3[i] <- GIMH_Gibbs_results$TN0.95
+  GIMH_Gibbs_FP0.95_sim3[i] <- GIMH_Gibbs_results$FP0.95
+  GIMH_Gibbs_FN0.95_sim3[i] <- GIMH_Gibbs_results$FN0.95
+  
+  GIMH_Gibbs_AUC_sim3[i] <- GIMH_Gibbs_results$AUC  
+  
+  GIMH_Gibbs_coverage_sim3[i] <- GIMH_Gibbs_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r GIMH_Gibbs_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+GIMH_Gibbs_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("GIMH", 6),
+  Type = rep("Local-New", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(GIMH_Gibbs_Theta_MAE_sim3), 
+           mean(GIMH_Gibbs_AUC_sim3),
+           mean(FDR(GIMH_Gibbs_FP0.95_sim3, GIMH_Gibbs_TP0.95_sim3)),
+           mean(GIMH_Gibbs_TP0.95_sim3/(GIMH_Gibbs_FN0.95_sim3 + GIMH_Gibbs_TP0.95_sim3), na.rm = TRUE),
+           mean(GIMH_Gibbs_coverage_sim3),
+           mean(GIMH_Gibbs_time_sim3)
+  ),
+  sd = c(sd(GIMH_Gibbs_Theta_MAE_sim3)/sqrt(N_rep), 
+           sd(GIMH_Gibbs_AUC_sim3)/sqrt(N_rep),
+           sd(FDR(GIMH_Gibbs_FP0.95_sim3, GIMH_Gibbs_TP0.95_sim3))/sqrt(N_rep),
+           sd(GIMH_Gibbs_TP0.95_sim3/(GIMH_Gibbs_FN0.95_sim3 + GIMH_Gibbs_TP0.95_sim3), na.rm = TRUE)/sqrt(N_rep),
+           sd(GIMH_Gibbs_coverage_sim3)/sqrt(N_rep),
+           sd(GIMH_Gibbs_time_sim3)/sqrt(N_rep)
+  )
+)
+
+```
+
+## regression.pl
+
+```{r regression.pl_sim3, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+regression.pl_Theta_MAE_sim3 <- array(NA, dim = c(N_rep))
+regression.pl_Theta_diag_MAE_sim3 <- array(NA, dim = c(N_rep))
+regression.pl_Theta_zeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+regression.pl_Theta_nonzeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+regression.pl_p_MAE_sim3 <- array(NA, dim = c(N_rep))
+regression.pl_p_zeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+regression.pl_p_nonzeros_MAE_sim3 <- array(NA, dim = c(N_rep))
+
+regression.pl_TP0.95_sim3 <- array(NA, dim = c(N_rep))
+regression.pl_TN0.95_sim3 <- array(NA, dim = c(N_rep))
+regression.pl_FP0.95_sim3 <- array(NA, dim = c(N_rep))
+regression.pl_FN0.95_sim3 <- array(NA, dim = c(N_rep))
+
+regression.pl_AUC_sim3 <- array(NA, dim = c(N_rep))
+
+regression.pl_time_sim3 <- array(NA, dim = c(N_rep))
+
+regression.pl_coverage_sim3 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  regression.pl_results <- regression.pl_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  regression.pl_time_sim3[i] <- regression.pl_results$Time
+  
+  ## chain 1
+  regression.pl_Theta_MAE_sim3[i] <- regression.pl_results$Theta_MAE
+  regression.pl_Theta_diag_MAE_sim3[i] <- regression.pl_results$Theta_diag_MAE
+  regression.pl_Theta_zeros_MAE_sim3[i] <- regression.pl_results$Theta_zeros_MAE
+  regression.pl_Theta_nonzeros_MAE_sim3[i] <- regression.pl_results$Theta_nonzeros_MAE
+  
+  regression.pl_p_MAE_sim3[i] <- regression.pl_results$p_MAE
+  regression.pl_p_zeros_MAE_sim3[i] <- regression.pl_results$p_zeros_MAE
+  regression.pl_p_nonzeros_MAE_sim3[i] <- regression.pl_results$p_nonzeros_MAE
+
+  
+  regression.pl_TP0.95_sim3[i] <- regression.pl_results$TP0.95
+  regression.pl_TN0.95_sim3[i] <- regression.pl_results$TN0.95
+  regression.pl_FP0.95_sim3[i] <- regression.pl_results$FP0.95
+  regression.pl_FN0.95_sim3[i] <- regression.pl_results$FN0.95
+  
+  regression.pl_AUC_sim3[i] <- regression.pl_results$AUC  
+  
+  regression.pl_coverage_sim3[i] <- regression.pl_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+ 
+   
+
+```
+
+```{r regression.pl_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+regression.pl_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("regression.pl", 6),
+  Type = rep("Pseudo", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(regression.pl_Theta_MAE_sim3), 
+           mean(regression.pl_AUC_sim3),
+           mean(FDR(regression.pl_FP0.95_sim3, regression.pl_TP0.95_sim3)),
+           mean(regression.pl_TP0.95_sim3/(regression.pl_FN0.95_sim3 + regression.pl_TP0.95_sim3), na.rm = TRUE),
+           mean(regression.pl_coverage_sim3),
+           mean(regression.pl_time_sim3)
+  ),
+  sd = c(sd(regression.pl_Theta_MAE_sim3)/sqrt(N_rep), 
+           sd(regression.pl_AUC_sim3)/sqrt(N_rep),
+           sd(FDR(regression.pl_FP0.95_sim3, regression.pl_TP0.95_sim3))/sqrt(N_rep),
+           sd(regression.pl_TP0.95_sim3/(regression.pl_FN0.95_sim3 + regression.pl_TP0.95_sim3), na.rm = TRUE)/sqrt(N_rep),
+           sd(regression.pl_coverage_sim3)/sqrt(N_rep),
+           sd(regression.pl_time_sim3)/sqrt(N_rep)
+  )
+)
+
+
+
+```
+
+## Comparisons
+
+```{r Final_Comparison_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+results_df_sim3 <- rbind(GLASSO_BIC_df_final, GLASSO_EBIC_df_final, ssgraph_df_final, bdgraph_df_final, bdgraph.mpl_df_final, Gibbs_df_final, GIMH_Gibbs_df_final, regression.pl_df_final)
+
+sim3_Final <- 
+results_df_sim3 |>
+  filter(Metric != "Time") |>
+  ggplot(aes(x = Metric, y = mean, col = Method, shape = Method)) + 
+  geom_point(position=position_dodge(width=0.5)) + 
+  geom_errorbar(aes(x = Metric, ymin = mean - 2*sd, ymax = mean + 2*sd), position=position_dodge(width=0.5)) +
+  scale_shape_manual(values = c(15, 16, 17, 18, 7, 11, 4, 8)) +
+  scale_color_manual(values = c("black", "darkgrey", "red", "blue", "darkgreen", "darkgreen", "darkgrey", "black")) +
+  ylab("Value") + 
+  ggtitle(paste0("Random-1/p: p = ", p, " n = ", n), subtitle = waiver())
+sim3_Final
+
+```
+
+
+
+
+# Blockdiagonal {.tabset}
+
+```{r data_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+graph_type <- "blockdiagonal"
+size <- 4
+
+set.seed(4)
+
+Theta_sim <- list()
+data_y <- list()
+
+for(i in 1:N_rep){
+  ggm <- NA
+  while(is.list(ggm) == FALSE){
+    G <- generate_G(p, type = graph_type, size = size)
+    ggm <- generate_Theta_y(n, G, min_rho = 0.1, max_rho = 0.5)
+  }
+  Theta_sim[[i]] <- ggm$Theta
+  data_y[[i]] <- ggm$y
+}
+
+```
+
+## GLASSO (BIC)
+
+```{r GLASSO_BIC_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GLASSO_BIC_Theta_MAE_sim4 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_Theta_diag_MAE_sim4 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_Theta_zeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_Theta_nonzeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_TP_sim4 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_TN_sim4 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_FP_sim4 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_FN_sim4 <- array(NA, dim = c(N_rep))
+
+GLASSO_BIC_time_sim4 <- array(NA, dim = c(N_rep))
+
+for(i in 1:N_rep){
+
+  GLASSO_BIC <- GLASSO_inference(data_y[[i]], Theta_sim[[i]], criteria = 'bic')
+  
+  GLASSO_BIC_time_sim4[i] <- GLASSO_BIC$Time
+  
+  GLASSO_BIC_Theta_MAE_sim4[i] <- GLASSO_BIC$Theta_MAE
+  GLASSO_BIC_Theta_diag_MAE_sim4[i] <- GLASSO_BIC$Theta_diag_MAE
+  GLASSO_BIC_Theta_zeros_MAE_sim4[i] <- GLASSO_BIC$Theta_zeros_MAE
+  GLASSO_BIC_Theta_nonzeros_MAE_sim4[i] <- GLASSO_BIC$Theta_nonzeros_MAE
+  
+  GLASSO_BIC_TP_sim4[i] <- GLASSO_BIC$TP
+  GLASSO_BIC_TN_sim4[i] <- GLASSO_BIC$TN
+  GLASSO_BIC_FP_sim4[i] <- GLASSO_BIC$FP
+  GLASSO_BIC_FN_sim4[i] <- GLASSO_BIC$FN
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+
+}
+
+```
+
+```{r GLASSO_BIC_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GLASSO_BIC_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("GLASSO-BIC", 6),
+  Type = rep("Frequentist", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(GLASSO_BIC_Theta_MAE_sim4), 
+           NA,
+           mean(FDR(GLASSO_BIC_FP_sim4, GLASSO_BIC_TP_sim4)),
+           mean(GLASSO_BIC_TP_sim4/(GLASSO_BIC_FN_sim4 + GLASSO_BIC_TP_sim4), na.rm = TRUE),
+           NA,
+           mean(GLASSO_BIC_time_sim4)
+  ),
+  sd = c(sd(GLASSO_BIC_Theta_MAE_sim4)/sqrt(N_rep), 
+           NA,
+           sd(FDR(GLASSO_BIC_FP_sim4, GLASSO_BIC_TP_sim4))/sqrt(N_rep),
+           sd(GLASSO_BIC_TP_sim4/(GLASSO_BIC_FN_sim4 + GLASSO_BIC_TP_sim4), na.rm = TRUE)/sqrt(N_rep),
+           NA,
+           sd(GLASSO_BIC_time_sim4)/sqrt(N_rep)
+  )
+)
+
+```
+
+## GLASSO (EBIC)
+
+```{r GLASSO_EBIC_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GLASSO_EBIC_Theta_MAE_sim4 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_Theta_diag_MAE_sim4 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_Theta_zeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_Theta_nonzeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_TP_sim4 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_TN_sim4 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_FP_sim4 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_FN_sim4 <- array(NA, dim = c(N_rep))
+
+GLASSO_EBIC_time_sim4 <- array(NA, dim = c(N_rep))
+
+for(i in 1:N_rep){
+
+  GLASSO_EBIC <- GLASSO_inference(data_y[[i]], Theta_sim[[i]], criteria = 'ebic')
+  
+  GLASSO_EBIC_time_sim4[i] <- GLASSO_EBIC$Time
+  
+  GLASSO_EBIC_Theta_MAE_sim4[i] <- GLASSO_EBIC$Theta_MAE
+  GLASSO_EBIC_Theta_diag_MAE_sim4[i] <- GLASSO_EBIC$Theta_diag_MAE
+  GLASSO_EBIC_Theta_zeros_MAE_sim4[i] <- GLASSO_EBIC$Theta_zeros_MAE
+  GLASSO_EBIC_Theta_nonzeros_MAE_sim4[i] <- GLASSO_EBIC$Theta_nonzeros_MAE
+  
+  GLASSO_EBIC_TP_sim4[i] <- GLASSO_EBIC$TP
+  GLASSO_EBIC_TN_sim4[i] <- GLASSO_EBIC$TN
+  GLASSO_EBIC_FP_sim4[i] <- GLASSO_EBIC$FP
+  GLASSO_EBIC_FN_sim4[i] <- GLASSO_EBIC$FN
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+
+}
+
+```
+
+```{r GLASSO_EBIC_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GLASSO_EBIC_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("GLASSO-EBIC", 6),
+  Type = rep("Frequentist", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(GLASSO_EBIC_Theta_MAE_sim4), 
+           NA,
+           mean(FDR(GLASSO_EBIC_FP_sim4, GLASSO_EBIC_TP_sim4)),
+           mean(GLASSO_EBIC_TP_sim4/(GLASSO_EBIC_FN_sim4 + GLASSO_EBIC_TP_sim4), na.rm = TRUE),
+          NA,
+           mean(GLASSO_EBIC_time_sim4)
+  ),
+  sd = c(sd(GLASSO_EBIC_Theta_MAE_sim4)/sqrt(N_rep), 
+           NA,
+           sd(FDR(GLASSO_EBIC_FP_sim4, GLASSO_EBIC_TP_sim4))/sqrt(N_rep),
+           sd(GLASSO_EBIC_TP_sim4/(GLASSO_EBIC_FN_sim4 + GLASSO_EBIC_TP_sim4), na.rm = TRUE)/sqrt(N_rep),
+           NA,
+           sd(GLASSO_EBIC_time_sim4)/sqrt(N_rep)
+  )
+)
+
+```
+
+## ssgraph
+
+```{r ssgraph_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+ssgraph_Theta_MAE_sim4 <- array(NA, dim = c(N_rep))
+ssgraph_Theta_diag_MAE_sim4 <- array(NA, dim = c(N_rep))
+ssgraph_Theta_zeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+ssgraph_Theta_nonzeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+ssgraph_p_MAE_sim4 <- array(NA, dim = c(N_rep))
+ssgraph_p_zeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+ssgraph_p_nonzeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+
+ssgraph_TP0.95_sim4 <- array(NA, dim = c(N_rep))
+ssgraph_TN0.95_sim4 <- array(NA, dim = c(N_rep))
+ssgraph_FP0.95_sim4 <- array(NA, dim = c(N_rep))
+ssgraph_FN0.95_sim4 <- array(NA, dim = c(N_rep))
+
+ssgraph_AUC_sim4 <- array(NA, dim = c(N_rep))
+
+ssgraph_time_sim4 <- array(NA, dim = c(N_rep))
+
+ssgraph_coverage_sim4 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  ssgraph_results <- ssgraph_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, s_spike = 2e-02)
+  
+  ssgraph_time_sim4[i] <- ssgraph_results$Time
+  
+  ## chain 1
+  ssgraph_Theta_MAE_sim4[i] <- ssgraph_results$Theta_MAE
+  ssgraph_Theta_diag_MAE_sim4[i] <- ssgraph_results$Theta_diag_MAE
+  ssgraph_Theta_zeros_MAE_sim4[i] <- ssgraph_results$Theta_zeros_MAE
+  ssgraph_Theta_nonzeros_MAE_sim4[i] <- ssgraph_results$Theta_nonzeros_MAE
+  
+  ssgraph_p_MAE_sim4[i] <- ssgraph_results$p_MAE
+  ssgraph_p_zeros_MAE_sim4[i] <- ssgraph_results$p_zeros_MAE
+  ssgraph_p_nonzeros_MAE_sim4[i] <- ssgraph_results$p_nonzeros_MAE
+  
+  ssgraph_TP0.95_sim4[i] <- ssgraph_results$TP0.95
+  ssgraph_TN0.95_sim4[i] <- ssgraph_results$TN0.95
+  ssgraph_FP0.95_sim4[i] <- ssgraph_results$FP0.95
+  ssgraph_FN0.95_sim4[i] <- ssgraph_results$FN0.95
+  
+  ssgraph_AUC_sim4[i] <- ssgraph_results$AUC  
+  
+  #ssgraph_coverage_sim4[i] <- ssgraph_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r ssgraph_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+ssgraph_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("ssgraph", 6),
+  Type = rep("Local-Prev", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(ssgraph_Theta_MAE_sim4), 
+           mean(ssgraph_AUC_sim4),
+           mean(FDR(ssgraph_FP0.95_sim4, ssgraph_TP0.95_sim4)),
+           mean(ssgraph_TP0.95_sim4/(ssgraph_FN0.95_sim4 + ssgraph_TP0.95_sim4), na.rm = TRUE),
+           mean(ssgraph_coverage_sim4),
+           mean(ssgraph_time_sim4)
+  ),
+  sd = c(sd(ssgraph_Theta_MAE_sim4)/sqrt(N_rep), 
+           sd(ssgraph_AUC_sim4)/sqrt(N_rep),
+           sd(FDR(ssgraph_FP0.95_sim4, ssgraph_TP0.95_sim4))/sqrt(N_rep),
+           sd(ssgraph_TP0.95_sim4/(ssgraph_FN0.95_sim4 + ssgraph_TP0.95_sim4), na.rm = TRUE)/sqrt(N_rep),
+           sd(ssgraph_coverage_sim4)/sqrt(N_rep),
+           sd(ssgraph_time_sim4)/sqrt(N_rep)
+  )
+)
+
+
+
+```
+
+## bdgraph
+
+Each iteration of bdgraph only updates one element, should at least scale this by the number of rows
+
+```{r bdgraph_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph_Theta_MAE_sim4 <- array(NA, dim = c(N_rep))
+bdgraph_Theta_diag_MAE_sim4 <- array(NA, dim = c(N_rep))
+bdgraph_Theta_zeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+bdgraph_Theta_nonzeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+bdgraph_p_MAE_sim4 <- array(NA, dim = c(N_rep))
+bdgraph_p_zeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+bdgraph_p_nonzeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+
+bdgraph_TP0.95_sim4 <- array(NA, dim = c(N_rep))
+bdgraph_TN0.95_sim4 <- array(NA, dim = c(N_rep))
+bdgraph_FP0.95_sim4 <- array(NA, dim = c(N_rep))
+bdgraph_FN0.95_sim4 <- array(NA, dim = c(N_rep))
+
+bdgraph_AUC_sim4 <- array(NA, dim = c(N_rep))
+
+bdgraph_time_sim4 <- array(NA, dim = c(N_rep))
+
+bdgraph_coverage_sim4 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  bdgraph_results <- bdgraph_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab)
+  
+  bdgraph_time_sim4[i] <- bdgraph_results$Time
+  
+  ## chain 1
+  bdgraph_Theta_MAE_sim4[i] <- bdgraph_results$Theta_MAE
+  bdgraph_Theta_diag_MAE_sim4[i] <- bdgraph_results$Theta_diag_MAE
+  bdgraph_Theta_zeros_MAE_sim4[i] <- bdgraph_results$Theta_zeros_MAE
+  bdgraph_Theta_nonzeros_MAE_sim4[i] <- bdgraph_results$Theta_nonzeros_MAE
+  
+  bdgraph_p_MAE_sim4[i] <- bdgraph_results$p_MAE
+  bdgraph_p_zeros_MAE_sim4[i] <- bdgraph_results$p_zeros_MAE
+  bdgraph_p_nonzeros_MAE_sim4[i] <- bdgraph_results$p_nonzeros_MAE
+  
+  bdgraph_TP0.95_sim4[i] <- bdgraph_results$TP0.95
+  bdgraph_TN0.95_sim4[i] <- bdgraph_results$TN0.95
+  bdgraph_FP0.95_sim4[i] <- bdgraph_results$FP0.95
+  bdgraph_FN0.95_sim4[i] <- bdgraph_results$FN0.95
+  
+  bdgraph_AUC_sim4[i] <- bdgraph_results$AUC  
+  
+  bdgraph_coverage_sim4[i] <- bdgraph_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r bdgraph_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+bdgraph_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("bdgraph", 6),
+  Type = rep("Local-Prev", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(bdgraph_Theta_MAE_sim4), 
+           mean(bdgraph_AUC_sim4),
+           mean(FDR(bdgraph_FP0.95_sim4, bdgraph_TP0.95_sim4)),
+           mean(bdgraph_TP0.95_sim4/(bdgraph_FN0.95_sim4 + bdgraph_TP0.95_sim4), na.rm = TRUE),
+           mean(bdgraph_coverage_sim4),
+           mean(bdgraph_time_sim4)
+  ),
+  sd = c(sd(bdgraph_Theta_MAE_sim4)/sqrt(N_rep), 
+           sd(bdgraph_AUC_sim4)/sqrt(N_rep),
+           sd(FDR(bdgraph_FP0.95_sim4, bdgraph_TP0.95_sim4))/sqrt(N_rep),
+           sd(bdgraph_TP0.95_sim4/(bdgraph_FN0.95_sim4 + bdgraph_TP0.95_sim4), na.rm = TRUE)/sqrt(N_rep),
+           sd(bdgraph_coverage_sim4)/sqrt(N_rep),
+           sd(bdgraph_time_sim4)/sqrt(N_rep)
+  )
+)
+
+```
+
+## bdgraph.mpl
+
+Just going from save=FALSE to save=TRUE increases the computation a lot
+
+```{r bdgraph.mpl_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph.mpl_Theta_MAE_sim4 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_Theta_diag_MAE_sim4 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_Theta_zeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_Theta_nonzeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_p_MAE_sim4 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_p_zeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_p_nonzeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_TP0.95_sim4 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_TN0.95_sim4 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_FP0.95_sim4 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_FN0.95_sim4 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_AUC_sim4 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_time_sim4 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_coverage_sim4 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  bdgraph.mpl_results <- bdgraph.mpl_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab)
+  
+  bdgraph.mpl_time_sim4[i] <- bdgraph.mpl_results$Time
+  
+  ## chain 1
+  bdgraph.mpl_Theta_MAE_sim4[i] <- bdgraph.mpl_results$Theta_MAE
+  bdgraph.mpl_Theta_diag_MAE_sim4[i] <- bdgraph.mpl_results$Theta_diag_MAE
+  bdgraph.mpl_Theta_zeros_MAE_sim4[i] <- bdgraph.mpl_results$Theta_zeros_MAE
+  bdgraph.mpl_Theta_nonzeros_MAE_sim4[i] <- bdgraph.mpl_results$Theta_nonzeros_MAE
+  
+  bdgraph.mpl_p_MAE_sim4[i] <- bdgraph.mpl_results$p_MAE
+  bdgraph.mpl_p_zeros_MAE_sim4[i] <- bdgraph.mpl_results$p_zeros_MAE
+  bdgraph.mpl_p_nonzeros_MAE_sim4[i] <- bdgraph.mpl_results$p_nonzeros_MAE
+  
+  bdgraph.mpl_TP0.95_sim4[i] <- bdgraph.mpl_results$TP0.95
+  bdgraph.mpl_TN0.95_sim4[i] <- bdgraph.mpl_results$TN0.95
+  bdgraph.mpl_FP0.95_sim4[i] <- bdgraph.mpl_results$FP0.95
+  bdgraph.mpl_FN0.95_sim4[i] <- bdgraph.mpl_results$FN0.95
+  
+  bdgraph.mpl_AUC_sim4[i] <- bdgraph.mpl_results$AUC  
+  
+  bdgraph.mpl_coverage_sim4[i] <- bdgraph.mpl_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+   
+ 
+
+```
+
+```{r bdgraph.mpl_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph.mpl_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("bdgraph.mpl", 6),
+  Type = rep("Pseudo", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(bdgraph.mpl_Theta_MAE_sim4), 
+           mean(bdgraph.mpl_AUC_sim4),
+           mean(FDR(bdgraph.mpl_FP0.95_sim4, bdgraph.mpl_TP0.95_sim4)),
+           mean(bdgraph.mpl_TP0.95_sim4/(bdgraph.mpl_FN0.95_sim4 + bdgraph.mpl_TP0.95_sim4), na.rm = TRUE),
+           mean(bdgraph.mpl_coverage_sim4),
+           mean(bdgraph.mpl_time_sim4)
+  ),
+  sd = c(sd(bdgraph.mpl_Theta_MAE_sim4)/sqrt(N_rep), 
+           sd(bdgraph.mpl_AUC_sim4)/sqrt(N_rep),
+           sd(FDR(bdgraph.mpl_FP0.95_sim4, bdgraph.mpl_TP0.95_sim4))/sqrt(N_rep),
+           sd(bdgraph.mpl_TP0.95_sim4/(bdgraph.mpl_FN0.95_sim4 + bdgraph.mpl_TP0.95_sim4), na.rm = TRUE)/sqrt(N_rep),
+           sd(bdgraph.mpl_coverage_sim4)/sqrt(N_rep),
+           sd(bdgraph.mpl_time_sim4)/sqrt(N_rep)
+  )
+)
+
+
+
+```
+
+## Gibbs
+
+```{r Gibbs_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+Gibbs_Theta_MAE_sim4 <- array(NA, dim = c(N_rep))
+Gibbs_Theta_diag_MAE_sim4 <- array(NA, dim = c(N_rep))
+Gibbs_Theta_zeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+Gibbs_Theta_nonzeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+Gibbs_p_MAE_sim4 <- array(NA, dim = c(N_rep))
+Gibbs_p_zeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+Gibbs_p_nonzeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+
+Gibbs_TP0.95_sim4 <- array(NA, dim = c(N_rep))
+Gibbs_TN0.95_sim4 <- array(NA, dim = c(N_rep))
+Gibbs_FP0.95_sim4 <- array(NA, dim = c(N_rep))
+Gibbs_FN0.95_sim4 <- array(NA, dim = c(N_rep))
+
+Gibbs_AUC_sim4 <- array(NA, dim = c(N_rep))
+
+Gibbs_time_sim4 <- array(NA, dim = c(N_rep))
+
+Gibbs_coverage_sim4 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  Gibbs_results <- Gibbs_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  Gibbs_time_sim4[i] <- Gibbs_results$Time
+  
+  ## chain 1
+  Gibbs_Theta_MAE_sim4[i] <- Gibbs_results$Theta_MAE
+  Gibbs_Theta_diag_MAE_sim4[i] <- Gibbs_results$Theta_diag_MAE
+  Gibbs_Theta_zeros_MAE_sim4[i] <- Gibbs_results$Theta_zeros_MAE
+  Gibbs_Theta_nonzeros_MAE_sim4[i] <- Gibbs_results$Theta_nonzeros_MAE
+  
+  Gibbs_p_MAE_sim4[i] <- Gibbs_results$p_MAE
+  Gibbs_p_zeros_MAE_sim4[i] <- Gibbs_results$p_zeros_MAE
+  Gibbs_p_nonzeros_MAE_sim4[i] <- Gibbs_results$p_nonzeros_MAE
+  
+  Gibbs_TP0.95_sim4[i] <- Gibbs_results$TP0.95
+  Gibbs_TN0.95_sim4[i] <- Gibbs_results$TN0.95
+  Gibbs_FP0.95_sim4[i] <- Gibbs_results$FP0.95
+  Gibbs_FN0.95_sim4[i] <- Gibbs_results$FN0.95
+  
+  Gibbs_AUC_sim4[i] <- Gibbs_results$AUC  
+  
+  Gibbs_coverage_sim4[i] <- Gibbs_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r Gibbs_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+Gibbs_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("Gibbs", 6),
+  Type = rep("Local-New", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(Gibbs_Theta_MAE_sim4), 
+           mean(Gibbs_AUC_sim4),
+           mean(FDR(Gibbs_FP0.95_sim4, Gibbs_TP0.95_sim4)),
+           mean(Gibbs_TP0.95_sim4/(Gibbs_FN0.95_sim4 + Gibbs_TP0.95_sim4), na.rm = TRUE),
+           mean(Gibbs_coverage_sim4),
+           mean(Gibbs_time_sim4)
+  ),
+  sd = c(sd(Gibbs_Theta_MAE_sim4)/sqrt(N_rep), 
+           sd(Gibbs_AUC_sim4)/sqrt(N_rep),
+           sd(FDR(Gibbs_FP0.95_sim4, Gibbs_TP0.95_sim4))/sqrt(N_rep),
+           sd(Gibbs_TP0.95_sim4/(Gibbs_FN0.95_sim4 + Gibbs_TP0.95_sim4), na.rm = TRUE)/sqrt(N_rep),
+           sd(Gibbs_coverage_sim4)/sqrt(N_rep),
+           sd(Gibbs_time_sim4)/sqrt(N_rep)
+  )
+)
+
+
+```
+
+## GIMH ($\upsilon = 0.75$)
+
+```{r GIMH_Gibbs_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GIMH_Gibbs_Theta_MAE_sim4 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_Theta_diag_MAE_sim4 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_Theta_zeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_Theta_nonzeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_p_MAE_sim4 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_p_zeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_p_nonzeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_TP0.95_sim4 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_TN0.95_sim4 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_FP0.95_sim4 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_FN0.95_sim4 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_AUC_sim4 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_time_sim4 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_coverage_sim4 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  GIMH_Gibbs_results <- GIMH_Gibbs_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, tempering = 0.75)
+  
+  GIMH_Gibbs_time_sim4[i] <- GIMH_Gibbs_results$Time
+  
+  ## chain 1
+  GIMH_Gibbs_Theta_MAE_sim4[i] <- GIMH_Gibbs_results$Theta_MAE
+  GIMH_Gibbs_Theta_diag_MAE_sim4[i] <- GIMH_Gibbs_results$Theta_diag_MAE
+  GIMH_Gibbs_Theta_zeros_MAE_sim4[i] <- GIMH_Gibbs_results$Theta_zeros_MAE
+  GIMH_Gibbs_Theta_nonzeros_MAE_sim4[i] <- GIMH_Gibbs_results$Theta_nonzeros_MAE
+  
+  GIMH_Gibbs_p_MAE_sim4[i] <- GIMH_Gibbs_results$p_MAE
+  GIMH_Gibbs_p_zeros_MAE_sim4[i] <- GIMH_Gibbs_results$p_zeros_MAE
+  GIMH_Gibbs_p_nonzeros_MAE_sim4[i] <- GIMH_Gibbs_results$p_nonzeros_MAE
+
+  
+  GIMH_Gibbs_TP0.95_sim4[i] <- GIMH_Gibbs_results$TP0.95
+  GIMH_Gibbs_TN0.95_sim4[i] <- GIMH_Gibbs_results$TN0.95
+  GIMH_Gibbs_FP0.95_sim4[i] <- GIMH_Gibbs_results$FP0.95
+  GIMH_Gibbs_FN0.95_sim4[i] <- GIMH_Gibbs_results$FN0.95
+  
+  GIMH_Gibbs_AUC_sim4[i] <- GIMH_Gibbs_results$AUC  
+  
+  GIMH_Gibbs_coverage_sim4[i] <- GIMH_Gibbs_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r GIMH_Gibbs_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+GIMH_Gibbs_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("GIMH", 6),
+  Type = rep("Local-New", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(GIMH_Gibbs_Theta_MAE_sim4), 
+           mean(GIMH_Gibbs_AUC_sim4),
+           mean(FDR(GIMH_Gibbs_FP0.95_sim4, GIMH_Gibbs_TP0.95_sim4)),
+           mean(GIMH_Gibbs_TP0.95_sim4/(GIMH_Gibbs_FN0.95_sim4 + GIMH_Gibbs_TP0.95_sim4), na.rm = TRUE),
+           mean(GIMH_Gibbs_coverage_sim4),
+           mean(GIMH_Gibbs_time_sim4)
+  ),
+  sd = c(sd(GIMH_Gibbs_Theta_MAE_sim4)/sqrt(N_rep), 
+           sd(GIMH_Gibbs_AUC_sim4)/sqrt(N_rep),
+           sd(FDR(GIMH_Gibbs_FP0.95_sim4, GIMH_Gibbs_TP0.95_sim4))/sqrt(N_rep),
+           sd(GIMH_Gibbs_TP0.95_sim4/(GIMH_Gibbs_FN0.95_sim4 + GIMH_Gibbs_TP0.95_sim4), na.rm = TRUE)/sqrt(N_rep),
+           sd(GIMH_Gibbs_coverage_sim4)/sqrt(N_rep),
+           sd(GIMH_Gibbs_time_sim4)/sqrt(N_rep)
+  )
+)
+
+```
+
+## regression.pl
+
+```{r regression.pl_sim4, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+regression.pl_Theta_MAE_sim4 <- array(NA, dim = c(N_rep))
+regression.pl_Theta_diag_MAE_sim4 <- array(NA, dim = c(N_rep))
+regression.pl_Theta_zeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+regression.pl_Theta_nonzeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+regression.pl_p_MAE_sim4 <- array(NA, dim = c(N_rep))
+regression.pl_p_zeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+regression.pl_p_nonzeros_MAE_sim4 <- array(NA, dim = c(N_rep))
+
+regression.pl_TP0.95_sim4 <- array(NA, dim = c(N_rep))
+regression.pl_TN0.95_sim4 <- array(NA, dim = c(N_rep))
+regression.pl_FP0.95_sim4 <- array(NA, dim = c(N_rep))
+regression.pl_FN0.95_sim4 <- array(NA, dim = c(N_rep))
+
+regression.pl_AUC_sim4 <- array(NA, dim = c(N_rep))
+
+regression.pl_time_sim4 <- array(NA, dim = c(N_rep))
+
+regression.pl_coverage_sim4 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  regression.pl_results <- regression.pl_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  regression.pl_time_sim4[i] <- regression.pl_results$Time
+  
+  ## chain 1
+  regression.pl_Theta_MAE_sim4[i] <- regression.pl_results$Theta_MAE
+  regression.pl_Theta_diag_MAE_sim4[i] <- regression.pl_results$Theta_diag_MAE
+  regression.pl_Theta_zeros_MAE_sim4[i] <- regression.pl_results$Theta_zeros_MAE
+  regression.pl_Theta_nonzeros_MAE_sim4[i] <- regression.pl_results$Theta_nonzeros_MAE
+  
+  regression.pl_p_MAE_sim4[i] <- regression.pl_results$p_MAE
+  regression.pl_p_zeros_MAE_sim4[i] <- regression.pl_results$p_zeros_MAE
+  regression.pl_p_nonzeros_MAE_sim4[i] <- regression.pl_results$p_nonzeros_MAE
+
+  
+  regression.pl_TP0.95_sim4[i] <- regression.pl_results$TP0.95
+  regression.pl_TN0.95_sim4[i] <- regression.pl_results$TN0.95
+  regression.pl_FP0.95_sim4[i] <- regression.pl_results$FP0.95
+  regression.pl_FN0.95_sim4[i] <- regression.pl_results$FN0.95
+  
+  regression.pl_AUC_sim4[i] <- regression.pl_results$AUC  
+  
+  regression.pl_coverage_sim4[i] <- regression.pl_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+ 
+   
+
+```
+
+```{r regression.pl_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+regression.pl_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("regression.pl", 6),
+  Type = rep("Pseudo", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(regression.pl_Theta_MAE_sim4), 
+           mean(regression.pl_AUC_sim4),
+           mean(FDR(regression.pl_FP0.95_sim4, regression.pl_TP0.95_sim4)),
+           mean(regression.pl_TP0.95_sim4/(regression.pl_FN0.95_sim4 + regression.pl_TP0.95_sim4), na.rm = TRUE),
+           mean(regression.pl_coverage_sim4),
+           mean(regression.pl_time_sim4)
+  ),
+  sd = c(sd(regression.pl_Theta_MAE_sim4)/sqrt(N_rep), 
+           sd(regression.pl_AUC_sim4)/sqrt(N_rep),
+           sd(FDR(regression.pl_FP0.95_sim4, regression.pl_TP0.95_sim4))/sqrt(N_rep),
+           sd(regression.pl_TP0.95_sim4/(regression.pl_FN0.95_sim4 + regression.pl_TP0.95_sim4), na.rm = TRUE)/sqrt(N_rep),
+           sd(regression.pl_coverage_sim4)/sqrt(N_rep),
+           sd(regression.pl_time_sim4)/sqrt(N_rep)
+  )
+)
+
+
+
+```
+
+## Comparisons
+
+```{r Final_Comparison_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+results_df_sim4 <- rbind(GLASSO_BIC_df_final, GLASSO_EBIC_df_final, ssgraph_df_final, bdgraph_df_final, bdgraph.mpl_df_final, Gibbs_df_final, GIMH_Gibbs_df_final, regression.pl_df_final)
+
+sim4_Final <- 
+results_df_sim4 |>
+  filter(Metric != "Time") |>
+  ggplot(aes(x = Metric, y = mean, col = Method, shape = Method)) + 
+  geom_point(position=position_dodge(width=0.5)) + 
+  geom_errorbar(aes(x = Metric, ymin = mean - 2*sd, ymax = mean + 2*sd), position=position_dodge(width=0.5)) +
+  scale_shape_manual(values = c(15, 16, 17, 18, 7, 11, 4, 8)) +
+  scale_color_manual(values = c("black", "darkgrey", "red", "blue", "darkgreen", "darkgreen", "darkgrey", "black")) +
+  ylab("Value") + 
+  ggtitle(paste0("Random-1/p: p = ", p, " n = ", n), subtitle = waiver())
+sim4_Final
+
+```
+
+
+
+# Illconditioned   {.tabset}
+
+```{r data_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+graph_type <- "illconditioned"
+
+Th= diag(p)
+diag(Th)= 1.5
+Th[abs(col(Th) - row(Th))==1]= 0.9
+Th[abs(col(Th) - row(Th))==2]= 0.5
+if(p == 10){
+  Th[abs(col(Th) - row(Th))==3]= 0.43
+} else{
+  Th[abs(col(Th) - row(Th))==3]= 0.35
+}
+
+min(eigen(Th)$values)
+
+set.seed(4)
+
+Theta_sim <- list()
+data_y <- list()
+
+for(i in 1:N_rep){
+  Theta_sim[[i]] <- Th
+  data_y[[i]] <- scale(rmvnorm(n, sigma=solve(Th)), center=TRUE, scale=FALSE)
+}
+
+```
+
+## GLASSO (BIC)
+
+```{r GLASSO_BIC_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GLASSO_BIC_Theta_MAE_sim5 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_Theta_diag_MAE_sim5 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_Theta_zeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_Theta_nonzeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_TP_sim5 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_TN_sim5 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_FP_sim5 <- array(NA, dim = c(N_rep))
+GLASSO_BIC_FN_sim5 <- array(NA, dim = c(N_rep))
+
+GLASSO_BIC_time_sim5 <- array(NA, dim = c(N_rep))
+
+for(i in 1:N_rep){
+
+  GLASSO_BIC <- GLASSO_inference(data_y[[i]], Theta_sim[[i]], criteria = 'bic')
+  
+  GLASSO_BIC_time_sim5[i] <- GLASSO_BIC$Time
+  
+  GLASSO_BIC_Theta_MAE_sim5[i] <- GLASSO_BIC$Theta_MAE
+  GLASSO_BIC_Theta_diag_MAE_sim5[i] <- GLASSO_BIC$Theta_diag_MAE
+  GLASSO_BIC_Theta_zeros_MAE_sim5[i] <- GLASSO_BIC$Theta_zeros_MAE
+  GLASSO_BIC_Theta_nonzeros_MAE_sim5[i] <- GLASSO_BIC$Theta_nonzeros_MAE
+  
+  GLASSO_BIC_TP_sim5[i] <- GLASSO_BIC$TP
+  GLASSO_BIC_TN_sim5[i] <- GLASSO_BIC$TN
+  GLASSO_BIC_FP_sim5[i] <- GLASSO_BIC$FP
+  GLASSO_BIC_FN_sim5[i] <- GLASSO_BIC$FN
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+
+}
+
+```
+
+```{r GLASSO_BIC_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GLASSO_BIC_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("GLASSO-BIC", 6),
+  Type = rep("Frequentist", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(GLASSO_BIC_Theta_MAE_sim5), 
+           NA,
+           mean(FDR(GLASSO_BIC_FP_sim5, GLASSO_BIC_TP_sim5)),
+           mean(GLASSO_BIC_TP_sim5/(GLASSO_BIC_FN_sim5 + GLASSO_BIC_TP_sim5), na.rm = TRUE),
+           NA,
+           mean(GLASSO_BIC_time_sim5)
+  ),
+  sd = c(sd(GLASSO_BIC_Theta_MAE_sim5)/sqrt(N_rep), 
+           NA,
+           sd(FDR(GLASSO_BIC_FP_sim5, GLASSO_BIC_TP_sim5))/sqrt(N_rep),
+           sd(GLASSO_BIC_TP_sim5/(GLASSO_BIC_FN_sim5 + GLASSO_BIC_TP_sim5), na.rm = TRUE)/sqrt(N_rep),
+           NA,
+           sd(GLASSO_BIC_time_sim5)/sqrt(N_rep)
+  )
+)
+
+```
+
+## GLASSO (EBIC)
+
+```{r GLASSO_EBIC_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GLASSO_EBIC_Theta_MAE_sim5 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_Theta_diag_MAE_sim5 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_Theta_zeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_Theta_nonzeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_TP_sim5 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_TN_sim5 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_FP_sim5 <- array(NA, dim = c(N_rep))
+GLASSO_EBIC_FN_sim5 <- array(NA, dim = c(N_rep))
+
+GLASSO_EBIC_time_sim5 <- array(NA, dim = c(N_rep))
+
+for(i in 1:N_rep){
+
+  GLASSO_EBIC <- GLASSO_inference(data_y[[i]], Theta_sim[[i]], criteria = 'ebic')
+  
+  GLASSO_EBIC_time_sim5[i] <- GLASSO_EBIC$Time
+  
+  GLASSO_EBIC_Theta_MAE_sim5[i] <- GLASSO_EBIC$Theta_MAE
+  GLASSO_EBIC_Theta_diag_MAE_sim5[i] <- GLASSO_EBIC$Theta_diag_MAE
+  GLASSO_EBIC_Theta_zeros_MAE_sim5[i] <- GLASSO_EBIC$Theta_zeros_MAE
+  GLASSO_EBIC_Theta_nonzeros_MAE_sim5[i] <- GLASSO_EBIC$Theta_nonzeros_MAE
+  
+  GLASSO_EBIC_TP_sim5[i] <- GLASSO_EBIC$TP
+  GLASSO_EBIC_TN_sim5[i] <- GLASSO_EBIC$TN
+  GLASSO_EBIC_FP_sim5[i] <- GLASSO_EBIC$FP
+  GLASSO_EBIC_FN_sim5[i] <- GLASSO_EBIC$FN
+  
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+
+}
+
+```
+
+```{r GLASSO_EBIC_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+GLASSO_EBIC_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("GLASSO-EBIC", 6),
+  Type = rep("Frequentist", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(GLASSO_EBIC_Theta_MAE_sim5), 
+           NA,
+           mean(FDR(GLASSO_EBIC_FP_sim5, GLASSO_EBIC_TP_sim5)),
+           mean(GLASSO_EBIC_TP_sim5/(GLASSO_EBIC_FN_sim5 + GLASSO_EBIC_TP_sim5), na.rm = TRUE),
+          NA,
+           mean(GLASSO_EBIC_time_sim5)
+  ),
+  sd = c(sd(GLASSO_EBIC_Theta_MAE_sim5)/sqrt(N_rep), 
+           NA,
+           sd(FDR(GLASSO_EBIC_FP_sim5, GLASSO_EBIC_TP_sim5))/sqrt(N_rep),
+           sd(GLASSO_EBIC_TP_sim5/(GLASSO_EBIC_FN_sim5 + GLASSO_EBIC_TP_sim5), na.rm = TRUE)/sqrt(N_rep),
+           NA,
+           sd(GLASSO_EBIC_time_sim5)/sqrt(N_rep)
+  )
+)
+
+```
+
+## ssgraph
+
+```{r ssgraph_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+ssgraph_Theta_MAE_sim5 <- array(NA, dim = c(N_rep))
+ssgraph_Theta_diag_MAE_sim5 <- array(NA, dim = c(N_rep))
+ssgraph_Theta_zeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+ssgraph_Theta_nonzeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+ssgraph_p_MAE_sim5 <- array(NA, dim = c(N_rep))
+ssgraph_p_zeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+ssgraph_p_nonzeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+
+ssgraph_TP0.95_sim5 <- array(NA, dim = c(N_rep))
+ssgraph_TN0.95_sim5 <- array(NA, dim = c(N_rep))
+ssgraph_FP0.95_sim5 <- array(NA, dim = c(N_rep))
+ssgraph_FN0.95_sim5 <- array(NA, dim = c(N_rep))
+
+ssgraph_AUC_sim5 <- array(NA, dim = c(N_rep))
+
+ssgraph_time_sim5 <- array(NA, dim = c(N_rep))
+
+ssgraph_coverage_sim5 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  ssgraph_results <- ssgraph_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, s_spike = 2e-02)
+  
+  ssgraph_time_sim5[i] <- ssgraph_results$Time
+  
+  ## chain 1
+  ssgraph_Theta_MAE_sim5[i] <- ssgraph_results$Theta_MAE
+  ssgraph_Theta_diag_MAE_sim5[i] <- ssgraph_results$Theta_diag_MAE
+  ssgraph_Theta_zeros_MAE_sim5[i] <- ssgraph_results$Theta_zeros_MAE
+  ssgraph_Theta_nonzeros_MAE_sim5[i] <- ssgraph_results$Theta_nonzeros_MAE
+  
+  ssgraph_p_MAE_sim5[i] <- ssgraph_results$p_MAE
+  ssgraph_p_zeros_MAE_sim5[i] <- ssgraph_results$p_zeros_MAE
+  ssgraph_p_nonzeros_MAE_sim5[i] <- ssgraph_results$p_nonzeros_MAE
+  
+  ssgraph_TP0.95_sim5[i] <- ssgraph_results$TP0.95
+  ssgraph_TN0.95_sim5[i] <- ssgraph_results$TN0.95
+  ssgraph_FP0.95_sim5[i] <- ssgraph_results$FP0.95
+  ssgraph_FN0.95_sim5[i] <- ssgraph_results$FN0.95
+  
+  ssgraph_AUC_sim5[i] <- ssgraph_results$AUC  
+  
+  #ssgraph_coverage_sim5[i] <- ssgraph_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r ssgraph_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+ssgraph_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("ssgraph", 6),
+  Type = rep("Local-Prev", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(ssgraph_Theta_MAE_sim5), 
+           mean(ssgraph_AUC_sim5),
+           mean(FDR(ssgraph_FP0.95_sim5, ssgraph_TP0.95_sim5)),
+           mean(ssgraph_TP0.95_sim5/(ssgraph_FN0.95_sim5 + ssgraph_TP0.95_sim5), na.rm = TRUE),
+           mean(ssgraph_coverage_sim5),
+           mean(ssgraph_time_sim5)
+  ),
+  sd = c(sd(ssgraph_Theta_MAE_sim5)/sqrt(N_rep), 
+           sd(ssgraph_AUC_sim5)/sqrt(N_rep),
+           sd(FDR(ssgraph_FP0.95_sim5, ssgraph_TP0.95_sim5))/sqrt(N_rep),
+           sd(ssgraph_TP0.95_sim5/(ssgraph_FN0.95_sim5 + ssgraph_TP0.95_sim5), na.rm = TRUE)/sqrt(N_rep),
+           sd(ssgraph_coverage_sim5)/sqrt(N_rep),
+           sd(ssgraph_time_sim5)/sqrt(N_rep)
+  )
+)
+
+
+
+```
+
+## bdgraph
+
+Each iteration of bdgraph only updates one element, should at least scale this by the number of rows
+
+```{r bdgraph_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph_Theta_MAE_sim5 <- array(NA, dim = c(N_rep))
+bdgraph_Theta_diag_MAE_sim5 <- array(NA, dim = c(N_rep))
+bdgraph_Theta_zeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+bdgraph_Theta_nonzeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+bdgraph_p_MAE_sim5 <- array(NA, dim = c(N_rep))
+bdgraph_p_zeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+bdgraph_p_nonzeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+
+bdgraph_TP0.95_sim5 <- array(NA, dim = c(N_rep))
+bdgraph_TN0.95_sim5 <- array(NA, dim = c(N_rep))
+bdgraph_FP0.95_sim5 <- array(NA, dim = c(N_rep))
+bdgraph_FN0.95_sim5 <- array(NA, dim = c(N_rep))
+
+bdgraph_AUC_sim5 <- array(NA, dim = c(N_rep))
+
+bdgraph_time_sim5 <- array(NA, dim = c(N_rep))
+
+bdgraph_coverage_sim5 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  bdgraph_results <- bdgraph_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab)
+  
+  bdgraph_time_sim5[i] <- bdgraph_results$Time
+  
+  ## chain 1
+  bdgraph_Theta_MAE_sim5[i] <- bdgraph_results$Theta_MAE
+  bdgraph_Theta_diag_MAE_sim5[i] <- bdgraph_results$Theta_diag_MAE
+  bdgraph_Theta_zeros_MAE_sim5[i] <- bdgraph_results$Theta_zeros_MAE
+  bdgraph_Theta_nonzeros_MAE_sim5[i] <- bdgraph_results$Theta_nonzeros_MAE
+  
+  bdgraph_p_MAE_sim5[i] <- bdgraph_results$p_MAE
+  bdgraph_p_zeros_MAE_sim5[i] <- bdgraph_results$p_zeros_MAE
+  bdgraph_p_nonzeros_MAE_sim5[i] <- bdgraph_results$p_nonzeros_MAE
+  
+  bdgraph_TP0.95_sim5[i] <- bdgraph_results$TP0.95
+  bdgraph_TN0.95_sim5[i] <- bdgraph_results$TN0.95
+  bdgraph_FP0.95_sim5[i] <- bdgraph_results$FP0.95
+  bdgraph_FN0.95_sim5[i] <- bdgraph_results$FN0.95
+  
+  bdgraph_AUC_sim5[i] <- bdgraph_results$AUC  
+  
+  bdgraph_coverage_sim5[i] <- bdgraph_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r bdgraph_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+bdgraph_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("bdgraph", 6),
+  Type = rep("Local-Prev", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(bdgraph_Theta_MAE_sim5), 
+           mean(bdgraph_AUC_sim5),
+           mean(FDR(bdgraph_FP0.95_sim5, bdgraph_TP0.95_sim5)),
+           mean(bdgraph_TP0.95_sim5/(bdgraph_FN0.95_sim5 + bdgraph_TP0.95_sim5), na.rm = TRUE),
+           mean(bdgraph_coverage_sim5),
+           mean(bdgraph_time_sim5)
+  ),
+  sd = c(sd(bdgraph_Theta_MAE_sim5)/sqrt(N_rep), 
+           sd(bdgraph_AUC_sim5)/sqrt(N_rep),
+           sd(FDR(bdgraph_FP0.95_sim5, bdgraph_TP0.95_sim5))/sqrt(N_rep),
+           sd(bdgraph_TP0.95_sim5/(bdgraph_FN0.95_sim5 + bdgraph_TP0.95_sim5), na.rm = TRUE)/sqrt(N_rep),
+           sd(bdgraph_coverage_sim5)/sqrt(N_rep),
+           sd(bdgraph_time_sim5)/sqrt(N_rep)
+  )
+)
+
+```
+
+## bdgraph.mpl
+
+Just going from save=FALSE to save=TRUE increases the computation a lot
+
+```{r bdgraph.mpl_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+bdgraph.mpl_Theta_MAE_sim5 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_Theta_diag_MAE_sim5 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_Theta_zeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_Theta_nonzeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_p_MAE_sim5 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_p_zeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_p_nonzeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_TP0.95_sim5 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_TN0.95_sim5 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_FP0.95_sim5 <- array(NA, dim = c(N_rep))
+bdgraph.mpl_FN0.95_sim5 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_AUC_sim5 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_time_sim5 <- array(NA, dim = c(N_rep))
+
+bdgraph.mpl_coverage_sim5 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  bdgraph.mpl_results <- bdgraph.mpl_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab)
+  
+  bdgraph.mpl_time_sim5[i] <- bdgraph.mpl_results$Time
+  
+  ## chain 1
+  bdgraph.mpl_Theta_MAE_sim5[i] <- bdgraph.mpl_results$Theta_MAE
+  bdgraph.mpl_Theta_diag_MAE_sim5[i] <- bdgraph.mpl_results$Theta_diag_MAE
+  bdgraph.mpl_Theta_zeros_MAE_sim5[i] <- bdgraph.mpl_results$Theta_zeros_MAE
+  bdgraph.mpl_Theta_nonzeros_MAE_sim5[i] <- bdgraph.mpl_results$Theta_nonzeros_MAE
+  
+  bdgraph.mpl_p_MAE_sim5[i] <- bdgraph.mpl_results$p_MAE
+  bdgraph.mpl_p_zeros_MAE_sim5[i] <- bdgraph.mpl_results$p_zeros_MAE
+  bdgraph.mpl_p_nonzeros_MAE_sim5[i] <- bdgraph.mpl_results$p_nonzeros_MAE
+  
+  bdgraph.mpl_TP0.95_sim5[i] <- bdgraph.mpl_results$TP0.95
+  bdgraph.mpl_TN0.95_sim5[i] <- bdgraph.mpl_results$TN0.95
+  bdgraph.mpl_FP0.95_sim5[i] <- bdgraph.mpl_results$FP0.95
+  bdgraph.mpl_FN0.95_sim5[i] <- bdgraph.mpl_results$FN0.95
+  
+  bdgraph.mpl_AUC_sim5[i] <- bdgraph.mpl_results$AUC  
+  
+  bdgraph.mpl_coverage_sim5[i] <- bdgraph.mpl_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+   
+ 
+
+```
+
+```{r bdgraph.mpl_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+bdgraph.mpl_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("bdgraph.mpl", 6),
+  Type = rep("Pseudo", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(bdgraph.mpl_Theta_MAE_sim5), 
+           mean(bdgraph.mpl_AUC_sim5),
+           mean(FDR(bdgraph.mpl_FP0.95_sim5, bdgraph.mpl_TP0.95_sim5)),
+           mean(bdgraph.mpl_TP0.95_sim5/(bdgraph.mpl_FN0.95_sim5 + bdgraph.mpl_TP0.95_sim5), na.rm = TRUE),
+           mean(bdgraph.mpl_coverage_sim5),
+           mean(bdgraph.mpl_time_sim5)
+  ),
+  sd = c(sd(bdgraph.mpl_Theta_MAE_sim5)/sqrt(N_rep), 
+           sd(bdgraph.mpl_AUC_sim5)/sqrt(N_rep),
+           sd(FDR(bdgraph.mpl_FP0.95_sim5, bdgraph.mpl_TP0.95_sim5))/sqrt(N_rep),
+           sd(bdgraph.mpl_TP0.95_sim5/(bdgraph.mpl_FN0.95_sim5 + bdgraph.mpl_TP0.95_sim5), na.rm = TRUE)/sqrt(N_rep),
+           sd(bdgraph.mpl_coverage_sim5)/sqrt(N_rep),
+           sd(bdgraph.mpl_time_sim5)/sqrt(N_rep)
+  )
+)
+
+
+
+```
+
+## Gibbs
+
+```{r Gibbs_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+Gibbs_Theta_MAE_sim5 <- array(NA, dim = c(N_rep))
+Gibbs_Theta_diag_MAE_sim5 <- array(NA, dim = c(N_rep))
+Gibbs_Theta_zeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+Gibbs_Theta_nonzeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+Gibbs_p_MAE_sim5 <- array(NA, dim = c(N_rep))
+Gibbs_p_zeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+Gibbs_p_nonzeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+
+Gibbs_TP0.95_sim5 <- array(NA, dim = c(N_rep))
+Gibbs_TN0.95_sim5 <- array(NA, dim = c(N_rep))
+Gibbs_FP0.95_sim5 <- array(NA, dim = c(N_rep))
+Gibbs_FN0.95_sim5 <- array(NA, dim = c(N_rep))
+
+Gibbs_AUC_sim5 <- array(NA, dim = c(N_rep))
+
+Gibbs_time_sim5 <- array(NA, dim = c(N_rep))
+
+Gibbs_coverage_sim5 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  Gibbs_results <- Gibbs_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  Gibbs_time_sim5[i] <- Gibbs_results$Time
+  
+  ## chain 1
+  Gibbs_Theta_MAE_sim5[i] <- Gibbs_results$Theta_MAE
+  Gibbs_Theta_diag_MAE_sim5[i] <- Gibbs_results$Theta_diag_MAE
+  Gibbs_Theta_zeros_MAE_sim5[i] <- Gibbs_results$Theta_zeros_MAE
+  Gibbs_Theta_nonzeros_MAE_sim5[i] <- Gibbs_results$Theta_nonzeros_MAE
+  
+  Gibbs_p_MAE_sim5[i] <- Gibbs_results$p_MAE
+  Gibbs_p_zeros_MAE_sim5[i] <- Gibbs_results$p_zeros_MAE
+  Gibbs_p_nonzeros_MAE_sim5[i] <- Gibbs_results$p_nonzeros_MAE
+  
+  Gibbs_TP0.95_sim5[i] <- Gibbs_results$TP0.95
+  Gibbs_TN0.95_sim5[i] <- Gibbs_results$TN0.95
+  Gibbs_FP0.95_sim5[i] <- Gibbs_results$FP0.95
+  Gibbs_FN0.95_sim5[i] <- Gibbs_results$FN0.95
+  
+  Gibbs_AUC_sim5[i] <- Gibbs_results$AUC  
+  
+  Gibbs_coverage_sim5[i] <- Gibbs_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r Gibbs_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+Gibbs_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("Gibbs", 6),
+  Type = rep("Local-New", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(Gibbs_Theta_MAE_sim5), 
+           mean(Gibbs_AUC_sim5),
+           mean(FDR(Gibbs_FP0.95_sim5, Gibbs_TP0.95_sim5)),
+           mean(Gibbs_TP0.95_sim5/(Gibbs_FN0.95_sim5 + Gibbs_TP0.95_sim5), na.rm = TRUE),
+           mean(Gibbs_coverage_sim5),
+           mean(Gibbs_time_sim5)
+  ),
+  sd = c(sd(Gibbs_Theta_MAE_sim5)/sqrt(N_rep), 
+           sd(Gibbs_AUC_sim5)/sqrt(N_rep),
+           sd(FDR(Gibbs_FP0.95_sim5, Gibbs_TP0.95_sim5))/sqrt(N_rep),
+           sd(Gibbs_TP0.95_sim5/(Gibbs_FN0.95_sim5 + Gibbs_TP0.95_sim5), na.rm = TRUE)/sqrt(N_rep),
+           sd(Gibbs_coverage_sim5)/sqrt(N_rep),
+           sd(Gibbs_time_sim5)/sqrt(N_rep)
+  )
+)
+
+
+```
+
+## GIMH ($\upsilon = 0.75$)
+
+```{r GIMH_Gibbs_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+GIMH_Gibbs_Theta_MAE_sim5 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_Theta_diag_MAE_sim5 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_Theta_zeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_Theta_nonzeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_p_MAE_sim5 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_p_zeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_p_nonzeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_TP0.95_sim5 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_TN0.95_sim5 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_FP0.95_sim5 <- array(NA, dim = c(N_rep))
+GIMH_Gibbs_FN0.95_sim5 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_AUC_sim5 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_time_sim5 <- array(NA, dim = c(N_rep))
+
+GIMH_Gibbs_coverage_sim5 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  GIMH_Gibbs_results <- GIMH_Gibbs_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda, tempering = 0.75)
+  
+  GIMH_Gibbs_time_sim5[i] <- GIMH_Gibbs_results$Time
+  
+  ## chain 1
+  GIMH_Gibbs_Theta_MAE_sim5[i] <- GIMH_Gibbs_results$Theta_MAE
+  GIMH_Gibbs_Theta_diag_MAE_sim5[i] <- GIMH_Gibbs_results$Theta_diag_MAE
+  GIMH_Gibbs_Theta_zeros_MAE_sim5[i] <- GIMH_Gibbs_results$Theta_zeros_MAE
+  GIMH_Gibbs_Theta_nonzeros_MAE_sim5[i] <- GIMH_Gibbs_results$Theta_nonzeros_MAE
+  
+  GIMH_Gibbs_p_MAE_sim5[i] <- GIMH_Gibbs_results$p_MAE
+  GIMH_Gibbs_p_zeros_MAE_sim5[i] <- GIMH_Gibbs_results$p_zeros_MAE
+  GIMH_Gibbs_p_nonzeros_MAE_sim5[i] <- GIMH_Gibbs_results$p_nonzeros_MAE
+
+  
+  GIMH_Gibbs_TP0.95_sim5[i] <- GIMH_Gibbs_results$TP0.95
+  GIMH_Gibbs_TN0.95_sim5[i] <- GIMH_Gibbs_results$TN0.95
+  GIMH_Gibbs_FP0.95_sim5[i] <- GIMH_Gibbs_results$FP0.95
+  GIMH_Gibbs_FN0.95_sim5[i] <- GIMH_Gibbs_results$FN0.95
+  
+  GIMH_Gibbs_AUC_sim5[i] <- GIMH_Gibbs_results$AUC  
+  
+  GIMH_Gibbs_coverage_sim5[i] <- GIMH_Gibbs_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+    
+
+```
+
+```{r GIMH_Gibbs_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+GIMH_Gibbs_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("GIMH", 6),
+  Type = rep("Local-New", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(GIMH_Gibbs_Theta_MAE_sim5), 
+           mean(GIMH_Gibbs_AUC_sim5),
+           mean(FDR(GIMH_Gibbs_FP0.95_sim5, GIMH_Gibbs_TP0.95_sim5)),
+           mean(GIMH_Gibbs_TP0.95_sim5/(GIMH_Gibbs_FN0.95_sim5 + GIMH_Gibbs_TP0.95_sim5), na.rm = TRUE),
+           mean(GIMH_Gibbs_coverage_sim5),
+           mean(GIMH_Gibbs_time_sim5)
+  ),
+  sd = c(sd(GIMH_Gibbs_Theta_MAE_sim5)/sqrt(N_rep), 
+           sd(GIMH_Gibbs_AUC_sim5)/sqrt(N_rep),
+           sd(FDR(GIMH_Gibbs_FP0.95_sim5, GIMH_Gibbs_TP0.95_sim5))/sqrt(N_rep),
+           sd(GIMH_Gibbs_TP0.95_sim5/(GIMH_Gibbs_FN0.95_sim5 + GIMH_Gibbs_TP0.95_sim5), na.rm = TRUE)/sqrt(N_rep),
+           sd(GIMH_Gibbs_coverage_sim5)/sqrt(N_rep),
+           sd(GIMH_Gibbs_time_sim5)/sqrt(N_rep)
+  )
+)
+
+```
+
+## regression.pl
+
+```{r regression.pl_sim5, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
+
+regression.pl_Theta_MAE_sim5 <- array(NA, dim = c(N_rep))
+regression.pl_Theta_diag_MAE_sim5 <- array(NA, dim = c(N_rep))
+regression.pl_Theta_zeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+regression.pl_Theta_nonzeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+regression.pl_p_MAE_sim5 <- array(NA, dim = c(N_rep))
+regression.pl_p_zeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+regression.pl_p_nonzeros_MAE_sim5 <- array(NA, dim = c(N_rep))
+
+regression.pl_TP0.95_sim5 <- array(NA, dim = c(N_rep))
+regression.pl_TN0.95_sim5 <- array(NA, dim = c(N_rep))
+regression.pl_FP0.95_sim5 <- array(NA, dim = c(N_rep))
+regression.pl_FN0.95_sim5 <- array(NA, dim = c(N_rep))
+
+regression.pl_AUC_sim5 <- array(NA, dim = c(N_rep))
+
+regression.pl_time_sim5 <- array(NA, dim = c(N_rep))
+
+regression.pl_coverage_sim5 <- rep(NA, N_rep)
+
+for(i in 1:N_rep){
+  
+  regression.pl_results <- regression.pl_inference(data_y[[i]], Theta_sim[[i]], iterations, warmup, prior_params$w_slab, prior_params$s_slab, prior_params$lambda)
+  
+  regression.pl_time_sim5[i] <- regression.pl_results$Time
+  
+  ## chain 1
+  regression.pl_Theta_MAE_sim5[i] <- regression.pl_results$Theta_MAE
+  regression.pl_Theta_diag_MAE_sim5[i] <- regression.pl_results$Theta_diag_MAE
+  regression.pl_Theta_zeros_MAE_sim5[i] <- regression.pl_results$Theta_zeros_MAE
+  regression.pl_Theta_nonzeros_MAE_sim5[i] <- regression.pl_results$Theta_nonzeros_MAE
+  
+  regression.pl_p_MAE_sim5[i] <- regression.pl_results$p_MAE
+  regression.pl_p_zeros_MAE_sim5[i] <- regression.pl_results$p_zeros_MAE
+  regression.pl_p_nonzeros_MAE_sim5[i] <- regression.pl_results$p_nonzeros_MAE
+
+  
+  regression.pl_TP0.95_sim5[i] <- regression.pl_results$TP0.95
+  regression.pl_TN0.95_sim5[i] <- regression.pl_results$TN0.95
+  regression.pl_FP0.95_sim5[i] <- regression.pl_results$FP0.95
+  regression.pl_FN0.95_sim5[i] <- regression.pl_results$FN0.95
+  
+  regression.pl_AUC_sim5[i] <- regression.pl_results$AUC  
+  
+  regression.pl_coverage_sim5[i] <- regression.pl_results$coverage_nonzeros
+
+  cat("\r", "Repeat", i, "done", "\n")
+  flush.console() 
+}
+ 
+   
+
+```
+
+```{r regression.pl_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+
+regression.pl_df_final <- data.frame(
+  Data = rep("Random-1/p", 6),
+  n = rep(n, 6),
+  Method = rep("regression.pl", 6),
+  Type = rep("Pseudo", 6),
+  Metric = factor(c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time"), levels = c("MSE-Omega", "AUC", "FDR",  "Power", "CoverageNonZeros", "Time")),
+  mean = c(mean(regression.pl_Theta_MAE_sim5), 
+           mean(regression.pl_AUC_sim5),
+           mean(FDR(regression.pl_FP0.95_sim5, regression.pl_TP0.95_sim5)),
+           mean(regression.pl_TP0.95_sim5/(regression.pl_FN0.95_sim5 + regression.pl_TP0.95_sim5), na.rm = TRUE),
+           mean(regression.pl_coverage_sim5),
+           mean(regression.pl_time_sim5)
+  ),
+  sd = c(sd(regression.pl_Theta_MAE_sim5)/sqrt(N_rep), 
+           sd(regression.pl_AUC_sim5)/sqrt(N_rep),
+           sd(FDR(regression.pl_FP0.95_sim5, regression.pl_TP0.95_sim5))/sqrt(N_rep),
+           sd(regression.pl_TP0.95_sim5/(regression.pl_FN0.95_sim5 + regression.pl_TP0.95_sim5), na.rm = TRUE)/sqrt(N_rep),
+           sd(regression.pl_coverage_sim5)/sqrt(N_rep),
+           sd(regression.pl_time_sim5)/sqrt(N_rep)
+  )
+)
+
+
+
+```
+
+## Comparisons
+
+```{r Final_Comparison_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
+
+results_df_sim5 <- rbind(GLASSO_BIC_df_final, GLASSO_EBIC_df_final, ssgraph_df_final, bdgraph_df_final, bdgraph.mpl_df_final, Gibbs_df_final, GIMH_Gibbs_df_final, regression.pl_df_final)
+
+sim5_Final <- 
+results_df_sim5 |>
+  filter(Metric != "Time") |>
+  ggplot(aes(x = Metric, y = mean, col = Method, shape = Method)) + 
+  geom_point(position=position_dodge(width=0.5)) + 
+  geom_errorbar(aes(x = Metric, ymin = mean - 2*sd, ymax = mean + 2*sd), position=position_dodge(width=0.5)) +
+  scale_shape_manual(values = c(15, 16, 17, 18, 7, 11, 4, 8)) +
+  scale_color_manual(values = c("black", "darkgrey", "red", "blue", "darkgreen", "darkgreen", "darkgrey", "black")) +
+  ylab("Value") + 
+  ggtitle(paste0("Random-1/p: p = ", p, " n = ", n), subtitle = waiver())
+sim5_Final
+
+```
+
+
+# Final Comparison
+
+```{r Final_Inference_Comparison_p10_diag, include = TRUE, echo = TRUE, eval = FALSE, cache = FALSE}
+#, dev = 'tikz', fig.width=10, fig.height = 12}
+
+
+results_df <- rbind(results_df_sim1, results_df_sim2, 
+                    results_df_sim3, results_df_sim4, results_df_sim5)
+
+results_df_alln <- rbind(results_df)
+
+
+FDR_plot <- results_df_alln |> 
+  filter(Metric == "FDR") |>
+  ggplot(aes(x = Data, y = mean, col = Method, shape = Method)) + 
+  geom_point(position=position_dodge(width=0.5)) + 
+  geom_errorbar(aes(x = Data, ymin = mean - 2*sd, ymax = mean + 2*sd), position=position_dodge(width=0.5)) +
+  geom_hline(yintercept=0.05, col = "red", linetype = "dashed") +
+  scale_shape_manual(values = c(15, 16, 17, 18, 7, 11, 4, 8)) +
+  scale_color_manual(values = c("black", "darkgrey", "red", "blue", "darkgreen", "darkgreen", "darkgrey", "black")) +
+  ylab("FDR") +
+  facet_wrap(vars(n), labeller=label_both) + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+FDR_plot
+
+Power_plot <- results_df_alln |> 
+  filter(Metric == "Power") |>
+  ggplot(aes(x = Data, y = mean, col = Method, shape = Method)) + 
+  geom_point(position=position_dodge(width=0.5)) + 
+  geom_errorbar(aes(x = Data, ymin = mean - 2*sd, ymax = mean + 2*sd), position=position_dodge(width=0.5)) +
+  scale_shape_manual(values = c(15, 16, 17, 18, 7, 11, 4, 8)) +
+  scale_color_manual(values = c("black", "darkgrey", "red", "blue", "darkgreen", "darkgreen", "darkgrey", "black")) +
+  ylab("Power") +
+  facet_wrap(vars(n), labeller=label_both) + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+Power_plot
+
+CoverageNonZeros_plot <- results_df_alln |> 
+  filter(Metric == "CoverageNonZeros") |>
+  ggplot(aes(x = Data, y = mean, col = Method, shape = Method)) + 
+  geom_point(position=position_dodge(width=0.5)) + 
+  geom_errorbar(aes(x = Data, ymin = mean - 2*sd, ymax = mean + 2*sd), position=position_dodge(width=0.5)) +
+  geom_hline(yintercept=0.95, col = "red", linetype = "dashed") +
+  scale_shape_manual(values = c(15, 16, 17, 18, 7, 11, 4, 8)) +
+  scale_color_manual(values = c("black", "darkgrey", "red", "blue", "darkgreen", "darkgreen", "darkgrey", "black")) +
+  ylab("CoverageNonZeros") +
+  facet_wrap(vars(n), labeller=label_both) + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+CoverageNonZeros_plot
+
+
+MSEOmega_plot <- results_df_alln |> 
+  filter(Metric == "MSE-Omega") |>
+  ggplot(aes(x = Data, y = mean, col = Method, shape = Method)) + 
+  geom_point(position=position_dodge(width=0.5)) + 
+  geom_errorbar(aes(x = Data, ymin = mean - 2*sd, ymax = mean + 2*sd), position=position_dodge(width=0.5)) +
+  scale_shape_manual(values = c(15, 16, 17, 18, 7, 11, 4, 8)) +
+  scale_color_manual(values = c("black", "darkgrey", "red", "blue", "darkgreen", "darkgreen", "darkgrey", "black")) +
+  ylab("MSE-Omega") +
+  facet_wrap(vars(n), labeller=label_both) + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+MSEOmega_plot
+
+AUC_plot <- results_df_alln |> 
+  filter(Metric == "AUC") |>
+  ggplot(aes(x = Data, y = mean, col = Method, shape = Method)) + 
+  geom_point(position=position_dodge(width=0.5)) + 
+  geom_errorbar(aes(x = Data, ymin = mean - 2*sd, ymax = mean + 2*sd), position=position_dodge(width=0.5)) +
+  scale_shape_manual(values = c(15, 16, 17, 18, 7, 11, 4, 8)) +
+  scale_color_manual(values = c("black", "darkgrey", "red", "blue", "darkgreen", "darkgreen", "darkgrey", "black")) +
+  ylab("AUC") +
+  facet_wrap(vars(n), labeller=label_both) + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+AUC_plot
+
+
+```
+
+
+```{r Final6_Inference_Comparison_p10_diag, include = TRUE, echo = TRUE, eval = FALSE, cache = FALSE, dev = 'tikz', fig.width=10, fig.height = 8}
+#, fig.height = 6}
+
+
+wrap_plots(CoverageNonZeros_plot + 
+               theme(plot.margin = margin(r = 1, t = 1),
+                     axis.title.x = element_blank(),
+                     axis.text.x = element_blank(),
+                     axis.ticks.x = element_blank()),
+          FDR_plot + 
+               theme(plot.margin = margin(l = 1, r = 1, b = 1),
+                     axis.title.x = element_blank(),
+                     axis.text.x = element_blank(),
+                     axis.ticks.x = element_blank() ),
+          Power_plot  +
+               theme(plot.margin = margin(r = 1, t = 1),
+                     axis.title.x = element_blank(),
+                     axis.text.x = element_blank(),
+                     axis.ticks.x = element_blank()  ), 
+          MSEOmega_plot  + 
+               theme(plot.margin = margin(r = 1, t = 1) ),
+          AUC_plot  +
+               theme(plot.margin = margin(r = 1, t = 1) ), 
+  
+          
+          nrow = 2, ncol = 3)  + plot_layout(guides = "collect")   & theme(legend.position = 'bottom', legend.title=element_blank())
+
+```
+
