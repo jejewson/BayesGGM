@@ -240,46 +240,8 @@ mean(fit.Gibbs_traceplot)
 ```{r locations_Map_Plot, include=TRUE,echo=TRUE, eval=TRUE,cache=FALSE}
 
 ## nodes, import the latitude and lon of each  county
-nodes <- read_csv("nodes118.csv")[, 2:6]
+nodes_new <- read_csv("nodes_new.csv")
 
-nodes$lon[49]
-nodes$lat[49]
-
-nodes[49, 2] <- -158.2019740 ## replace the lat and lon of Honolulu(Hawaii) by INTPTLAT and INTPTLON
-nodes[49, 3] <-  21.4613654
-
-myfinal_daily <- read.csv(file = paste("COVID_332_counties_meta_agg_pruned", ".csv", sep = ""))
-
-
-length(unique(myfinal_daily$Date)) # 679
-length(unique(myfinal_daily$ID_metacounty)) # 629 # 496
-
-id_metacounties <- unique(myfinal_daily$ID_metacounty)
-
-nodes_new <- data.frame("id" = id_metacounties)
-nodes_new$lon <- rep(NA, length(id_metacounties))
-nodes_new$lat <- rep(NA, length(id_metacounties))
-for(i in 1:length(id_metacounties)){
-  nodes_new$lon[i] <- unique(myfinal_daily$Long_[(which(myfinal_daily$ID_metacounty == id_metacounties[i]))])
-  nodes_new$lat[i] <- unique(myfinal_daily$Lat[(which(myfinal_daily$ID_metacounty == id_metacounties[i]))])
-}
-
-unique(myfinal_daily$ID_metacounty[which(myfinal_daily$State == "hawaii")])
-
-nodes_new$lon[which(nodes_new$id==80)]
-nodes_new$lat[which(nodes_new$id==80)]
-
-nodes_new$lon[which(nodes_new$id==81)]
-nodes_new$lat[which(nodes_new$id==81)]
-
-min(nodes_new$lon) 
-min(nodes_new$lat) 
-
-# WORKING WITH R INDEX NOT PYTHON
-nodes_new$id <- nodes_new$id + 1
-
-rm(myfinal_daily)
-rm(nodes)#cause we now have new ones
 
 ```
 
