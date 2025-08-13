@@ -1501,7 +1501,7 @@ sim2_serial_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE
    scale_x_continuous(trans = "log", labels=scaleFUNx) +
    scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Random-2/p p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
 sim2_serial_omega
 
@@ -1512,7 +1512,7 @@ sim2_serial_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = 
    scale_x_continuous(trans = "log", labels=scaleFUNx) +
    scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Random-2/p p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
 sim2_serial_p
 
@@ -1535,7 +1535,7 @@ sim2_RB_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE, co
     scale_x_continuous(trans = "log", labels=scaleFUNx) +
     scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Random-2/p p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
 sim2_RB_omega
 
@@ -1546,7 +1546,7 @@ sim2_RB_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = Meth
     scale_x_continuous(trans = "log", labels=scaleFUNx) +
     scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Random-2/p p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
 sim2_RB_p
 
@@ -1572,7 +1572,7 @@ sim2_Final_omega <- ggplot(comparison_results_p_omega_df, aes(x=Time, y=chain_Th
     scale_x_continuous(trans = "log", labels=scaleFUNx) +
     scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Random-2/p p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
 sim2_Final_omega
 
@@ -2227,7 +2227,7 @@ sim3_serial_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE
    scale_x_continuous(trans = "log", labels=scaleFUNx) +
    scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Tridiagonal p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
 sim3_serial_omega
 
@@ -2238,7 +2238,7 @@ sim3_serial_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = 
    scale_x_continuous(trans = "log", labels=scaleFUNx) +
    scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Tridiagonal p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
 sim3_serial_p
 
@@ -2261,7 +2261,7 @@ sim3_RB_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE, co
     scale_x_continuous(trans = "log", labels=scaleFUNx) +
     scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Tridiagonal p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
 sim3_RB_omega
 
@@ -2272,7 +2272,7 @@ sim3_RB_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = Meth
     scale_x_continuous(trans = "log", labels=scaleFUNx) +
     scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Tridiagonal p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
 sim3_RB_p
 
@@ -2298,7 +2298,7 @@ sim3_Final_omega <- ggplot(comparison_results_p_omega_df, aes(x=Time, y=chain_Th
     scale_x_continuous(trans = "log", labels=scaleFUNx) +
     scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Tridiagonal p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
 sim3_Final_omega
 
@@ -2953,7 +2953,7 @@ sim4_serial_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE
    scale_x_continuous(trans = "log", labels=scaleFUNx) +
    scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Blockdiagonal p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
 sim4_serial_omega
 
@@ -2964,7 +2964,7 @@ sim4_serial_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = 
    scale_x_continuous(trans = "log", labels=scaleFUNx) +
    scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Blockdiagonal p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
 sim4_serial_p
 
@@ -2987,7 +2987,7 @@ sim4_RB_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE, co
     scale_x_continuous(trans = "log", labels=scaleFUNx) +
     scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Blockdiagonal p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
 sim4_RB_omega
 
@@ -2998,7 +2998,7 @@ sim4_RB_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = Meth
     scale_x_continuous(trans = "log", labels=scaleFUNx) +
     scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Blockdiagonal p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
 sim4_RB_p
 
@@ -3024,7 +3024,7 @@ sim4_Final_omega <- ggplot(comparison_results_p_omega_df, aes(x=Time, y=chain_Th
     scale_x_continuous(trans = "log", labels=scaleFUNx) +
     scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Blockdiagonal p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
 sim4_Final_omega
 
@@ -3683,7 +3683,7 @@ sim5_serial_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE
    scale_x_continuous(trans = "log", labels=scaleFUNx) +
    scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Illconditioned p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
 sim5_serial_omega
 
@@ -3694,7 +3694,7 @@ sim5_serial_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = 
    scale_x_continuous(trans = "log", labels=scaleFUNx) +
    scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Illconditioned p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
 sim5_serial_p
 
@@ -3717,7 +3717,7 @@ sim5_RB_omega <- ggplot(comparison_results_df, aes(x=Time, y=chain_Theta_MAE, co
     scale_x_continuous(trans = "log", labels=scaleFUNx) +
     scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Illconditioned p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
 sim5_RB_omega
 
@@ -3728,7 +3728,7 @@ sim5_RB_p <- ggplot(comparison_results_df, aes(x=Time, y=chain_p_MAE, col = Meth
     scale_x_continuous(trans = "log", labels=scaleFUNx) +
     scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Illconditioned p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (p)", x = "Time (seconds)") + My_Theme
 sim5_RB_p
 
@@ -3754,7 +3754,7 @@ sim5_Final_omega <- ggplot(comparison_results_p_omega_df, aes(x=Time, y=chain_Th
     scale_x_continuous(trans = "log", labels=scaleFUNx) +
     scale_y_continuous(trans = "log", labels=scaleFUNy) +
     labs(
-  title = paste0("Random-1/p p = ", p, " n = ", nrow(data_y[[i]])),
+  title = paste0("Illconditioned p = ", p, " n = ", nrow(data_y[[i]])),
   y = "Between chain MAE (Omega)", x = "Time (seconds)") + My_Theme
 sim5_Final_omega
 
