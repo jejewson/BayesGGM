@@ -863,7 +863,7 @@ for(i in 1:N_rep){
 ```{r GLASSO_BIC_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 GLASSO_BIC_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Random-2/p", 6),
   n = rep(n, 6),
   Method = rep("GLASSO-BIC", 6),
   Type = rep("Frequentist", 6),
@@ -927,7 +927,7 @@ for(i in 1:N_rep){
 ```{r GLASSO_EBIC_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 GLASSO_EBIC_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Random-2/p", 6),
   n = rep(n, 6),
   Method = rep("GLASSO-EBIC", 6),
   Type = rep("Frequentist", 6),
@@ -1008,7 +1008,7 @@ for(i in 1:N_rep){
 ```{r ssgraph_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 ssgraph_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Random-2/p", 6),
   n = rep(n, 6),
   Method = rep("ssgraph", 6),
   Type = rep("Local-Prev", 6),
@@ -1094,7 +1094,7 @@ for(i in 1:N_rep){
 
 
 bdgraph_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Random-2/p", 6),
   n = rep(n, 6),
   Method = rep("bdgraph", 6),
   Type = rep("Local-Prev", 6),
@@ -1178,7 +1178,7 @@ for(i in 1:N_rep){
 ```{r bdgraph.mpl_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 bdgraph.mpl_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Random-2/p", 6),
   n = rep(n, 6),
   Method = rep("bdgraph.mpl", 6),
   Type = rep("Pseudo", 6),
@@ -1261,7 +1261,7 @@ for(i in 1:N_rep){
 ```{r Gibbs_sim2_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 Gibbs_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Random-2/p", 6),
   n = rep(n, 6),
   Method = rep("Gibbs", 6),
   Type = rep("Local-New", 6),
@@ -1345,7 +1345,7 @@ for(i in 1:N_rep){
 
 
 GIMH_Gibbs_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Random-2/p", 6),
   n = rep(n, 6),
   Method = rep("GIMH", 6),
   Type = rep("Local-New", 6),
@@ -1429,7 +1429,7 @@ for(i in 1:N_rep){
 
 
 regression.pl_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Random-2/p", 6),
   n = rep(n, 6),
   Method = rep("regression.pl", 6),
   Type = rep("Pseudo", 6),
@@ -1542,7 +1542,7 @@ for(i in 1:N_rep){
 ```{r GLASSO_BIC_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 GLASSO_BIC_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Tridiagonal", 6),
   n = rep(n, 6),
   Method = rep("GLASSO-BIC", 6),
   Type = rep("Frequentist", 6),
@@ -1606,7 +1606,7 @@ for(i in 1:N_rep){
 ```{r GLASSO_EBIC_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 GLASSO_EBIC_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Tridiagonal", 6),
   n = rep(n, 6),
   Method = rep("GLASSO-EBIC", 6),
   Type = rep("Frequentist", 6),
@@ -1687,7 +1687,7 @@ for(i in 1:N_rep){
 ```{r ssgraph_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 ssgraph_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Tridiagonal", 6),
   n = rep(n, 6),
   Method = rep("ssgraph", 6),
   Type = rep("Local-Prev", 6),
@@ -1773,7 +1773,7 @@ for(i in 1:N_rep){
 
 
 bdgraph_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Tridiagonal", 6),
   n = rep(n, 6),
   Method = rep("bdgraph", 6),
   Type = rep("Local-Prev", 6),
@@ -1857,7 +1857,7 @@ for(i in 1:N_rep){
 ```{r bdgraph.mpl_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 bdgraph.mpl_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Tridiagonal", 6),
   n = rep(n, 6),
   Method = rep("bdgraph.mpl", 6),
   Type = rep("Pseudo", 6),
@@ -1940,7 +1940,7 @@ for(i in 1:N_rep){
 ```{r Gibbs_sim3_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 Gibbs_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Tridiagonal", 6),
   n = rep(n, 6),
   Method = rep("Gibbs", 6),
   Type = rep("Local-New", 6),
@@ -2024,7 +2024,7 @@ for(i in 1:N_rep){
 
 
 GIMH_Gibbs_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Tridiagonal", 6),
   n = rep(n, 6),
   Method = rep("GIMH", 6),
   Type = rep("Local-New", 6),
@@ -2108,7 +2108,7 @@ for(i in 1:N_rep){
 
 
 regression.pl_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Tridiagonal", 6),
   n = rep(n, 6),
   Method = rep("regression.pl", 6),
   Type = rep("Pseudo", 6),
@@ -2221,7 +2221,7 @@ for(i in 1:N_rep){
 ```{r GLASSO_BIC_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 GLASSO_BIC_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Blockdiagonal", 6),
   n = rep(n, 6),
   Method = rep("GLASSO-BIC", 6),
   Type = rep("Frequentist", 6),
@@ -2285,7 +2285,7 @@ for(i in 1:N_rep){
 ```{r GLASSO_EBIC_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 GLASSO_EBIC_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Blockdiagonal", 6),
   n = rep(n, 6),
   Method = rep("GLASSO-EBIC", 6),
   Type = rep("Frequentist", 6),
@@ -2366,7 +2366,7 @@ for(i in 1:N_rep){
 ```{r ssgraph_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 ssgraph_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Blockdiagonal", 6),
   n = rep(n, 6),
   Method = rep("ssgraph", 6),
   Type = rep("Local-Prev", 6),
@@ -2452,7 +2452,7 @@ for(i in 1:N_rep){
 
 
 bdgraph_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Blockdiagonal", 6),
   n = rep(n, 6),
   Method = rep("bdgraph", 6),
   Type = rep("Local-Prev", 6),
@@ -2536,7 +2536,7 @@ for(i in 1:N_rep){
 ```{r bdgraph.mpl_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 bdgraph.mpl_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Blockdiagonal", 6),
   n = rep(n, 6),
   Method = rep("bdgraph.mpl", 6),
   Type = rep("Pseudo", 6),
@@ -2619,7 +2619,7 @@ for(i in 1:N_rep){
 ```{r Gibbs_sim4_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 Gibbs_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Blockdiagonal", 6),
   n = rep(n, 6),
   Method = rep("Gibbs", 6),
   Type = rep("Local-New", 6),
@@ -2703,7 +2703,7 @@ for(i in 1:N_rep){
 
 
 GIMH_Gibbs_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Blockdiagonal", 6),
   n = rep(n, 6),
   Method = rep("GIMH", 6),
   Type = rep("Local-New", 6),
@@ -2787,7 +2787,7 @@ for(i in 1:N_rep){
 
 
 regression.pl_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Blockdiagonal", 6),
   n = rep(n, 6),
   Method = rep("regression.pl", 6),
   Type = rep("Pseudo", 6),
@@ -2905,7 +2905,7 @@ for(i in 1:N_rep){
 ```{r GLASSO_BIC_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 GLASSO_BIC_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Illconditioned", 6),
   n = rep(n, 6),
   Method = rep("GLASSO-BIC", 6),
   Type = rep("Frequentist", 6),
@@ -2969,7 +2969,7 @@ for(i in 1:N_rep){
 ```{r GLASSO_EBIC_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 GLASSO_EBIC_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Illconditioned", 6),
   n = rep(n, 6),
   Method = rep("GLASSO-EBIC", 6),
   Type = rep("Frequentist", 6),
@@ -3050,7 +3050,7 @@ for(i in 1:N_rep){
 ```{r ssgraph_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 ssgraph_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Illconditioned", 6),
   n = rep(n, 6),
   Method = rep("ssgraph", 6),
   Type = rep("Local-Prev", 6),
@@ -3136,7 +3136,7 @@ for(i in 1:N_rep){
 
 
 bdgraph_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Illconditioned", 6),
   n = rep(n, 6),
   Method = rep("bdgraph", 6),
   Type = rep("Local-Prev", 6),
@@ -3220,7 +3220,7 @@ for(i in 1:N_rep){
 ```{r bdgraph.mpl_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 bdgraph.mpl_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Illconditioned", 6),
   n = rep(n, 6),
   Method = rep("bdgraph.mpl", 6),
   Type = rep("Pseudo", 6),
@@ -3303,7 +3303,7 @@ for(i in 1:N_rep){
 ```{r Gibbs_sim5_diag, include=TRUE, echo=TRUE, eval=TRUE, cache=FALSE}
 
 Gibbs_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Illconditioned", 6),
   n = rep(n, 6),
   Method = rep("Gibbs", 6),
   Type = rep("Local-New", 6),
@@ -3387,7 +3387,7 @@ for(i in 1:N_rep){
 
 
 GIMH_Gibbs_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Illconditioned", 6),
   n = rep(n, 6),
   Method = rep("GIMH", 6),
   Type = rep("Local-New", 6),
@@ -3471,7 +3471,7 @@ for(i in 1:N_rep){
 
 
 regression.pl_df_final <- data.frame(
-  Data = rep("Random-1/p", 6),
+  Data = rep("Illconditioned", 6),
   n = rep(n, 6),
   Method = rep("regression.pl", 6),
   Type = rep("Pseudo", 6),
