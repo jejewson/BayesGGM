@@ -93,7 +93,7 @@ bdgraph_inference <- function(data_y, Theta_sim, iterations, warmup, w_slab){
   ### init 1
   timer_bdgraph1.start <- Sys.time()
   fit.bdgraph1 <- bdgraph(data_y, method="ggm", iter=iterations*p+warmup*p, burnin = warmup*p, g.prior= w_slab, save=TRUE, verbose=TRUE, g.start = Omega_init1!=0, df.prior = 3)
-  bdgraph_samples_temp <- bdgraph.mpl_sampleOmega(fit.bdgraph1, iter=iterations, p, S, n_train)
+  bdgraph_samples_temp <- bdgraph.mpl_sampleOmega(fit.bdgraph1, iter=iterations, p, S, n_train, store_samples = TRUE)
   #fit.bdgraph1$K_hat <- bdgraph_samples_temp$Omega_hat
   fit.bdgraph1$Omega_samples <- bdgraph_samples_temp$Omega_sample
   timer_bdgraph1.end <- Sys.time()
