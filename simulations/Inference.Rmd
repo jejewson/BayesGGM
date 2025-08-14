@@ -6,7 +6,7 @@ output: html_document
 ---
 
 
-# $n and $p$
+# $n$ and $p$
 
 ```{r setting, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
 
@@ -408,6 +408,7 @@ for(i in 1:N_rep){
   cat("\r", "Repeat", i, "done", "\n")
   flush.console() 
 }
+
     
 
 ```
@@ -1086,7 +1087,8 @@ for(i in 1:N_rep){
   cat("\r", "Repeat", i, "done", "\n")
   flush.console() 
 }
-    
+   
+ 
 
 ```
 
@@ -1469,7 +1471,7 @@ results_df_sim2 |>
   scale_shape_manual(values = c(15, 16, 17, 18, 7, 11, 4, 8)) +
   scale_color_manual(values = c("black", "darkgrey", "red", "blue", "darkgreen", "darkgreen", "darkgrey", "black")) +
   ylab("Value") + 
-  ggtitle(paste0("Random-1/p: p = ", p, " n = ", n), subtitle = waiver())
+  ggtitle(paste0("Random-2/p: p = ", p, " n = ", n), subtitle = waiver())
 sim2_Final
 
 ```
@@ -1765,7 +1767,8 @@ for(i in 1:N_rep){
   cat("\r", "Repeat", i, "done", "\n")
   flush.console() 
 }
-    
+   
+ 
 
 ```
 
@@ -2148,7 +2151,7 @@ results_df_sim3 |>
   scale_shape_manual(values = c(15, 16, 17, 18, 7, 11, 4, 8)) +
   scale_color_manual(values = c("black", "darkgrey", "red", "blue", "darkgreen", "darkgreen", "darkgrey", "black")) +
   ylab("Value") + 
-  ggtitle(paste0("Random-1/p: p = ", p, " n = ", n), subtitle = waiver())
+  ggtitle(paste0("Tridiagonal: p = ", p, " n = ", n), subtitle = waiver())
 sim3_Final
 
 ```
@@ -2444,7 +2447,8 @@ for(i in 1:N_rep){
   cat("\r", "Repeat", i, "done", "\n")
   flush.console() 
 }
-    
+  
+  
 
 ```
 
@@ -2827,7 +2831,7 @@ results_df_sim4 |>
   scale_shape_manual(values = c(15, 16, 17, 18, 7, 11, 4, 8)) +
   scale_color_manual(values = c("black", "darkgrey", "red", "blue", "darkgreen", "darkgreen", "darkgrey", "black")) +
   ylab("Value") + 
-  ggtitle(paste0("Random-1/p: p = ", p, " n = ", n), subtitle = waiver())
+  ggtitle(paste0("Blockdiagonal: p = ", p, " n = ", n), subtitle = waiver())
 sim4_Final
 
 ```
@@ -3129,6 +3133,7 @@ for(i in 1:N_rep){
   flush.console() 
 }
     
+
 
 ```
 
@@ -3511,7 +3516,7 @@ results_df_sim5 |>
   scale_shape_manual(values = c(15, 16, 17, 18, 7, 11, 4, 8)) +
   scale_color_manual(values = c("black", "darkgrey", "red", "blue", "darkgreen", "darkgreen", "darkgrey", "black")) +
   ylab("Value") + 
-  ggtitle(paste0("Random-1/p: p = ", p, " n = ", n), subtitle = waiver())
+  ggtitle(paste0("Illconditioned: p = ", p, " n = ", n), subtitle = waiver())
 sim5_Final
 
 ```
@@ -3519,7 +3524,7 @@ sim5_Final
 
 # Final Comparison
 
-```{r Final_Inference_Comparison_p10_diag, include = TRUE, echo = TRUE, eval = FALSE, cache = FALSE}
+```{r Final_Inference_Comparison_p10_diag, include = TRUE, echo = TRUE, eval = TRUE, cache = FALSE}
 #, dev = 'tikz', fig.width=10, fig.height = 12}
 
 
@@ -3591,7 +3596,7 @@ AUC_plot
 ```
 
 
-```{r Final6_Inference_Comparison_p10_diag, include = TRUE, echo = TRUE, eval = FALSE, cache = FALSE, dev = 'tikz', fig.width=10, fig.height = 8}
+```{r Final6_Inference_Comparison_p10_diag, include = TRUE, echo = TRUE, eval = TRUE, cache = FALSE, dev = 'tikz', fig.width=10, fig.height = 8}
 #, fig.height = 6}
 
 
