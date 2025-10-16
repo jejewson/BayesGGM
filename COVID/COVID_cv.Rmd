@@ -22,13 +22,13 @@ library(mnormt)
 library(BDgraph)
 library(ssgraph)
 
-#remove.packages("mombf")
+#remove.packages("modelSelection")
 #if (file.exists(".RData")) file.remove(".RData")
 #library(devtools)
-#install_github("davidrusi/mombf")
+#install_github("davidrusi/modelSelection")
 
 
-library(mombf)
+library(modelSelection)
 
 library(readr)
 
@@ -183,7 +183,7 @@ Run each for long enough so that it looks like they have converged
 ## Initalisation
 
 ```{r init_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
-Omegaini <- mombf:::initialEstimateGGM(covid1_scaled, Omegaini='glasso-bic')
+Omegaini <- modelSelection:::initialEstimateGGM(covid1_scaled, Omegaini='glasso-bic')
 Omega_init <- (as.matrix(Omegaini) + t(as.matrix(Omegaini)))/2
 Sigma_init <- pd.solve(Omega_init)
 
@@ -193,7 +193,7 @@ Sigma_init <- pd.solve(Omega_init)
 
 ```{r GLASSO_BIC_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
 
-GLASSO_BIC_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("mombf", "matrixStats")) %dopar% {
+GLASSO_BIC_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("modelSelection", "matrixStats")) %dopar% {
 
   Omega_hat <- as.matrix(OmegaHat_GLASSO(covid1_scaled, criteria='glasso-bic', maxiter=5))
 
@@ -231,7 +231,7 @@ GLASSO_BIC_out_sample_R2
 
 ```{r GLASSO_EBIC_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
 
-GLASSO_EBIC_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("mombf", "matrixStats")) %dopar% {
+GLASSO_EBIC_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("modelSelection", "matrixStats")) %dopar% {
 
   Omega_hat <- as.matrix(OmegaHat_GLASSO(covid1_scaled, criteria='glasso-ebic', maxiter=5))
 
@@ -275,7 +275,7 @@ GLASSO_EBIC_out_sample_R2
 updates_per_iter <- p
 updates_per_column <- p
 
-Gibbs_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("mombf", "matrixStats")) %dopar% {
+Gibbs_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("modelSelection", "matrixStats")) %dopar% {
 
   fit.Gibbs <- modelSelectionGGM(train_data[[j]], sampler='Gibbs', Omegaini=Omega_init, niter=iterations+warmup, burnin=warmup, scale=FALSE, global_proposal='none', updates_per_iter = updates_per_iter, updates_per_column = updates_per_column, priorCoef=normalidprior(prior_params_covid$s_slab^2), priorModel=modelbinomprior(prior_params_covid$w_slab), priorDiag=exponentialprior(lambda=prior_params_covid$lambda))
   
@@ -320,7 +320,7 @@ prob_global <- 1 # so every column udpate is a full row form the parallel
 tempering <- 0.75
 truncratio <- -1. # means no truncation?
 
-GIMH_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("mombf", "matrixStats")) %dopar% {
+GIMH_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("modelSelection", "matrixStats")) %dopar% {
 
   fit.GIMH <- modelSelectionGGM(train_data[[j]], sampler='Gibbs', Omegaini=Omega_init, niter=iterations+warmup, burnin=warmup, scale=FALSE, global_proposal='regression', updates_per_iter = updates_per_iter, updates_per_column = updates_per_column, priorCoef=normalidprior(prior_params_covid$s_slab^2), priorModel=modelbinomprior(prior_params_covid$w_slab), priorDiag=exponentialprior(lambda=prior_params_covid$lambda), prob_global=prob_global, tempering=tempering, truncratio=truncratio)
   
@@ -364,7 +364,7 @@ jumps <- ceiling(sqrt(p))
 
 iter_multplier <- ceiling(sqrt(p))
 
-bdgraph.mpl_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("mombf", "mvtnorm", "BDgraph", "matrixStats")) %dopar% {
+bdgraph.mpl_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("modelSelection", "mvtnorm", "BDgraph", "matrixStats")) %dopar% {
   
   n_train <- nrow(train_data[[j]])
   S <- t(train_data[[j]])%*%train_data[[j]]
@@ -407,7 +407,7 @@ bdgraph.mpl_out_sample_R2
 ```{r regression.pl_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
 
 
-regression.pl_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("mombf", "mvtnorm", "BDgraph", "matrixStats", "Matrix")) %dopar% {
+regression.pl_sim_results <- foreach(j=1:N, .combine = 'cbind', .packages = c("modelSelection", "mvtnorm", "BDgraph", "matrixStats", "Matrix")) %dopar% {
   
   n_train <- nrow(train_data[[j]])
   S <- t(train_data[[j]])%*%train_data[[j]]

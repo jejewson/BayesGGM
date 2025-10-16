@@ -21,12 +21,12 @@ library(mnormt)
 library(BDgraph)
 library(ssgraph)
 
-#remove.packages("mombf")
+#remove.packages("modelSelection")
 #if (file.exists(".RData")) file.remove(".RData")
 #library(devtools)
-#install_github("davidrusi/mombf")
+#install_github("davidrusi/modelSelection")
 
-library(mombf)
+library(modelSelection)
 library(readr)
 
 
@@ -132,7 +132,7 @@ iterations <- 20000
 ## Initalisation
 
 ```{r init_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
-Omegaini <- mombf:::initialEstimateGGM(covid1_scaled, Omegaini='glasso-ebic')
+Omegaini <- modelSelection:::initialEstimateGGM(covid1_scaled, Omegaini='glasso-ebic')
 Omega_init <- (as.matrix(Omegaini) + t(as.matrix(Omegaini)))/2
 Sigma_init <- pd.solve(Omega_init)
 
@@ -191,9 +191,9 @@ fit.Gibbs <- modelSelectionGGM(covid1_scaled, sampler='Gibbs', Omegaini=Omega_in
 timer_Gibbs.end <- Sys.time()
 
 ## Mixing 
-traceplot.fit.Gibbs <- traceplot.mombf(fit.Gibbs, p)
+traceplot.fit.Gibbs <- traceplot.modelSelection(fit.Gibbs, p)
 
-plotcoda.fit.Gibbs <- plotcoda.mombf(fit.Gibbs, p)
+plotcoda.fit.Gibbs <- plotcoda.modelSelection(fit.Gibbs, p)
 
 ## Inference
 b <- coef(fit.Gibbs)
@@ -226,7 +226,7 @@ sum(Gibbs_graph_0.95[upper.tri(Gibbs_graph_0.95, diag = FALSE)])
 
 ```{r Gibbs_covid_diag_trace, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
 
-fit.Gibbs_traceplot <- traceplot_llp.mombf(y = covid1_scaled, mombf.object = fit.Gibbs, p, thinning = 100)
+fit.Gibbs_traceplot <- traceplot_llp.modelSelection(y = covid1_scaled, modelSelection.object = fit.Gibbs, p, thinning = 100)
 
 plot(1:length(fit.Gibbs_traceplot), fit.Gibbs_traceplot, xlab="Iterations", ylab = "log_target", type = "l")
 
@@ -328,9 +328,9 @@ b <- coef(fit.GIMH)
 fit.GIMH$p_links <- matrix(NA, nrow = p, ncol = p)
 fit.GIMH$p_links[upper.tri(fit.GIMH$p_links, diag = TRUE)] <- b[,6]
 
-traceplot.fit.GIMH <- traceplot.mombf(fit.GIMH, p)
+traceplot.fit.GIMH <- traceplot.modelSelection(fit.GIMH, p)
     
-plotcoda.fit.GIMH <- plotcoda.mombf(fit.GIMH, p)
+plotcoda.fit.GIMH <- plotcoda.modelSelection(fit.GIMH, p)
     
 
 GIMH_graph_0.95 <- bayes_graph_select(fit.GIMH$p_links, thresh = 0.95, FDR = TRUE)
