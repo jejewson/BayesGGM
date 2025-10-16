@@ -16,18 +16,18 @@ regression.pl_GGM <- function(Y, iter, burnin, w_slab, s_slab, lambda, Omega_ini
     y = Y[,id_var]
     #phi = 1./ Theta_sim[[1]][id_var, id_var] - Atchade did some empirical Bayes for the diagonals
     
-    fit.mombf_lr <- modelSelection(y=y, x=X, center=FALSE, scale=FALSE,
+    fit.modelSelection_lr <- modelSelection(y=y, x=X, center=FALSE, scale=FALSE,
                                    priorVar = igprior(1, lambda/2),
                                    priorCoef=normalidprior(s_slab^2),
-                                   priorDelta=modelbinomprior(w_slab),
+                                   priorModel=modelbinomprior(w_slab),
                                    niter=iter, burnin=burnin, 
                                    verbose=FALSE, deltaini = (Omega_init[id_var,-id_var] != 0),
-                                   initSearch=='none')# mombf GGM also only really cares about what is 0
+                                   initSearch=='none')# modelSelection GGM also only really cares about what is 0
     
     p_links[id_var,id_var] <- 1
-    p_links[id_var, -id_var] <- fit.mombf_lr$margpp
+    p_links[id_var, -id_var] <- fit.modelSelection_lr$margpp
     
-    atch_samples <- rnlp(msfit = fit.mombf_lr, niter=iter, burnin=0)
+    atch_samples <- rnlp(msfit = fit.modelSelection_lr, niter=iter, burnin=burnin)
     Omega_hat[id_var, id_var] <- mean(1/atch_samples[,p+1])
     Omega_hat[id_var, -id_var] <- - colMeans(atch_samples[,2:p] / matrix(atch_samples[,p+1], nrow = iter,ncol = p-1, byrow = FALSE))
     
@@ -265,17 +265,17 @@ generate_Theta_y <- function(n, G, min_rho = 0.1, max_rho = 0.5){
 
 
 
-traceplot.mombf <- function(mombf.object, p){
-  N_MCMC <- mombf.object@.Data[[1]]@Dim[1]
+traceplot.modelSelection <- function(modelSelection.object, p){
+  N_MCMC <- modelSelection.object@.Data[[1]]@Dim[1]
   model_size <- rep(NA, N_MCMC)
   for(n in 1:N_MCMC){
-    model_size[n] <- sum(mombf.object$postSample[n,] != 0) - p
+    model_size[n] <- sum(modelSelection.object$postSample[n,] != 0) - p
   }
   return(model_size)
 }
 
-plotcoda.mombf <- function(mombf.object, p, seed = 1, N_plot=NULL){
-  N_MCMC <- mombf.object@.Data[[1]]@Dim[1]
+plotcoda.modelSelection <- function(modelSelection.object, p, seed = 1, N_plot=NULL){
+  N_MCMC <- modelSelection.object@.Data[[1]]@Dim[1]
   if(is.null(N_plot)){
     N_plot <- min(100, (p*(p+1)/2))
   }
@@ -283,27 +283,27 @@ plotcoda.mombf <- function(mombf.object, p, seed = 1, N_plot=NULL){
   set.seed(seed)
   plot_index <- sample(1:(p*(p+1)/2), N_plot, replace = FALSE)
   for(n in 1:N_MCMC){
-    inclusion_probs[n,] <- colMeans(as.matrix(mombf.object$postSample[1:n,plot_index] != 0))
+    inclusion_probs[n,] <- colMeans(as.matrix(modelSelection.object$postSample[1:n,plot_index] != 0))
   }
   return(inclusion_probs)
 }
 
-traceplot_llp.mombf <- function(y, mombf.object, p, thinning = 1){
-  N_MCMC <- mombf.object@.Data[[1]]@Dim[1]
+traceplot_llp.modelSelection <- function(y, modelSelection.object, p, thinning = 1){
+  N_MCMC <- modelSelection.object@.Data[[1]]@Dim[1]
   N_MCMC_thinned <- ceiling(N_MCMC/thinning)
   log_target <- rep(NA, N_MCMC_thinned)
   Omega <- matrix(0, nrow = p, ncol = p)
   for(n in 1:N_MCMC_thinned){
     # fill Omega from correct index
-    Omega[upper.tri(Omega, diag = TRUE)] <- mombf.object$postSample[(n-1)*thinning + thinning,]
+    Omega[upper.tri(Omega, diag = TRUE)] <- modelSelection.object$postSample[(n-1)*thinning + thinning,]
     Omega[lower.tri(Omega, diag = FALSE)] <- 0
     Omega <- Omega + t(Omega) - diag(diag(Omega))
     llp <- sum(LaplacesDemon::dmvnp(y, mu = rep(0, p), Omega, log=TRUE))
-    prior_diag <- sum(dgamma(diag(Omega), shape = mombf.object@.Data[[7]]$priorDiag@priorPars[1],
-                             rate = mombf.object@.Data[[7]]$priorDiag@priorPars[2]/2, log = TRUE))
-    prior_zeros <- sum(Omega[upper.tri(Omega, diag = FALSE)] == 0)*log(1-mombf.object@.Data[[7]]$priorModel@priorPars$p) + 
-      sum(Omega[upper.tri(Omega, diag = FALSE)] != 0)*log(mombf.object@.Data[[7]]$priorModel@priorPars$p)
-    prior_nonzeros <- sum(dnorm(Omega[upper.tri(Omega, diag = FALSE)][which(Omega[upper.tri(Omega, diag = FALSE)] != 0)], 0, sqrt(mombf.object@.Data[[7]]$priorCoef@priorPars[1]), log = TRUE))
+    prior_diag <- sum(dgamma(diag(Omega), shape = modelSelection.object@.Data[[7]]$priorDiag@priorPars[1],
+                             rate = modelSelection.object@.Data[[7]]$priorDiag@priorPars[2]/2, log = TRUE))
+    prior_zeros <- sum(Omega[upper.tri(Omega, diag = FALSE)] == 0)*log(1-modelSelection.object@.Data[[7]]$priorModel@priorPars$p) + 
+      sum(Omega[upper.tri(Omega, diag = FALSE)] != 0)*log(modelSelection.object@.Data[[7]]$priorModel@priorPars$p)
+    prior_nonzeros <- sum(dnorm(Omega[upper.tri(Omega, diag = FALSE)][which(Omega[upper.tri(Omega, diag = FALSE)] != 0)], 0, sqrt(modelSelection.object@.Data[[7]]$priorCoef@priorPars[1]), log = TRUE))
     log_target[n] <- llp + prior_diag + prior_zeros + prior_nonzeros
   }
   return(log_target)
@@ -343,4 +343,28 @@ regression_R2_eval <- function(y_test, Omega_hat){
     }
   }
   return(cor(as.vector(y_test), as.vector(y_hat))^2)
+}
+
+traceplot.modelSelection.regression.pl <- function(regression.pl.object, p){
+  N_MCMC <- dim(regression.pl.object$Omega_samples)[1]
+  model_size <- rep(NA, N_MCMC)
+  for(n in 1:N_MCMC){
+    model_size[n] <- (sum(regression.pl.object$Omega_samples[n,,] != 0) - p)/2
+  }
+  return(model_size)
+}  
+
+plotcoda.modelSelection.regression.pl <- function(regression.pl.object, p, seed = 1, N_plot=NULL){
+  N_MCMC <- dim(regression.pl.object$Omega_samples)[1]
+  if(is.null(N_plot)){
+    N_plot <- min(100, (p*(p+1)/2))
+  }
+  inclusion_probs <- matrix(NA, nrow = N_MCMC, ncol = N_plot)
+  set.seed(seed)
+  plot_index1 <- sample(1:p, N_plot, replace = FALSE)
+  plot_index2 <- sample(1:p, N_plot, replace = FALSE)
+  for(i in 1:N_plot){
+    inclusion_probs[,i] <- cumsum(regression.pl.object$Omega_samples[,plot_index1[i], plot_index2[i]] != 0)/(2*(1:N_MCMC)) + cumsum(regression.pl.object$Omega_samples[,plot_index2[i], plot_index1[i]] != 0)/(2*(1:N_MCMC)) 
+  }
+  return(inclusion_probs)
 }

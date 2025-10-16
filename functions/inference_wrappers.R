@@ -24,7 +24,7 @@ ssgraph_inference <- function(data_y, Theta_sim, iterations, warmup, w_slab, s_s
   p <- ncol(data_y)
   
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y, Omegaini='glasso-ebic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y, Omegaini='glasso-ebic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Sigma_init1 <- pd.solve(Omega_init1)
   
@@ -82,7 +82,7 @@ bdgraph_inference <- function(data_y, Theta_sim, iterations, warmup, w_slab){
   p <- ncol(data_y)
   
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y, Omegaini='glasso-ebic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y, Omegaini='glasso-ebic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Sigma_init1 <- pd.solve(Omega_init1)
   
@@ -146,7 +146,7 @@ bdgraph.mpl_inference <- function(data_y, Theta_sim, iterations, warmup, w_slab)
   p <- ncol(data_y)
   
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y, Omegaini='glasso-ebic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y, Omegaini='glasso-ebic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Sigma_init1 <- pd.solve(Omega_init1)
   
@@ -209,7 +209,7 @@ Gibbs_inference <- function(data_y, Theta_sim, iterations, warmup, w_slab, s_sla
   p <- ncol(data_y)
   
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y, Omegaini='glasso-ebic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y, Omegaini='glasso-ebic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Sigma_init1 <- pd.solve(Omega_init1)
   
@@ -275,7 +275,7 @@ GIMH_Gibbs_inference <- function(data_y, Theta_sim, iterations, warmup, w_slab, 
   p <- ncol(data_y)
   
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y, Omegaini='glasso-ebic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y, Omegaini='glasso-ebic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Sigma_init1 <- pd.solve(Omega_init1)
   
@@ -343,7 +343,7 @@ regression.pl_inference <- function(data_y, Theta_sim, iterations, warmup, w_sla
   p <- ncol(data_y)
   
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y, Omegaini='glasso-ebic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y, Omegaini='glasso-ebic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Sigma_init1 <- pd.solve(Omega_init1)
   
