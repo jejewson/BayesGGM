@@ -35,12 +35,12 @@ library(mnormt)
 library(BDgraph)
 library(ssgraph)
 
-#remove.packages("mombf")
+#remove.packages("modelSelection")
 #if (file.exists(".RData")) file.remove(".RData")
 #library(devtools)
-#install_github("davidrusi/mombf")
+#install_github("davidrusi/modelSelection")
 
-library(mombf)
+library(modelSelection)
 
 library(ggplot2)
 library(ggpubr)
@@ -173,7 +173,7 @@ GIMH_Gibbs_T1_sim1 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -222,7 +222,7 @@ GIMH_Gibbs_T0.75_sim1 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -271,7 +271,7 @@ GIMH_Gibbs_T0.5_sim1 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_iniT0.5 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -320,7 +320,7 @@ GIMH_Gibbs_T0.25_sim1 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_iniT0.25 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -428,7 +428,7 @@ GIMH_Gibbs_T1_sim2 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -477,7 +477,7 @@ GIMH_Gibbs_T0.75_sim2 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -526,7 +526,7 @@ GIMH_Gibbs_T0.5_sim2 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_iniT0.5 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -575,7 +575,7 @@ GIMH_Gibbs_T0.25_sim2 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_iniT0.25 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -685,7 +685,7 @@ GIMH_Gibbs_T1_sim3 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -734,7 +734,7 @@ GIMH_Gibbs_T0.75_sim3 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -783,7 +783,7 @@ GIMH_Gibbs_T0.5_sim3 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_iniT0.5 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -832,7 +832,7 @@ GIMH_Gibbs_T0.25_sim3 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_iniT0.25 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -941,7 +941,7 @@ GIMH_Gibbs_T1_sim4 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -990,7 +990,7 @@ GIMH_Gibbs_T0.75_sim4 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -1039,7 +1039,7 @@ GIMH_Gibbs_T0.5_sim4 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_iniT0.5 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -1088,7 +1088,7 @@ GIMH_Gibbs_T0.25_sim4 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_iniT0.25 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -1204,7 +1204,7 @@ GIMH_Gibbs_T1_sim5 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -1253,7 +1253,7 @@ GIMH_Gibbs_T0.75_sim5 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_init1 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -1302,7 +1302,7 @@ GIMH_Gibbs_T0.5_sim5 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_iniT0.5 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
@@ -1351,7 +1351,7 @@ GIMH_Gibbs_T0.25_sim5 <- list()
 
 for(i in 1:N_rep){
   ## initalisation
-  Omegaini1 <- mombf:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
+  Omegaini1 <- modelSelection:::initialEstimateGGM(data_y[[i]], Omegaini='glasso-bic')
   Omega_iniT0.25 <- (as.matrix(Omegaini1) + t(as.matrix(Omegaini1)))/2
   Omegaini2 <- diag(1, p)
   Omega_init2 <- (as.matrix(Omegaini2) + t(as.matrix(Omegaini2)))/2
