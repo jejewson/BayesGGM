@@ -365,7 +365,7 @@ sum(GIMH_graph_0.95[upper.tri(GIMH_graph_0.95, diag = FALSE)])
 ```{r bdgraph.mpl_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE, cache.lazy = FALSE}
 jumps <- 1
 
-iter_multiplier <- ceiling(sqrt(p))
+iter_multiplier <- 2*ceiling(sqrt(p))
 
 timer_bdgraph.mpl.start <- Sys.time()
 fit.bdgraph.mpl <- bdgraph.mpl(covid1_scaled, method="ggm", iter= iter_multiplier*(iterations+warmup), burnin = iter_multiplier*warmup, g.prior= prior_params_covid$w_slab, save=TRUE, verbose=TRUE, g.start = Omega_init!=0, jump = jumps)
@@ -389,9 +389,12 @@ fit.bdgraph.mpl$p_links <- plinks(fit.bdgraph.mpl, round = 3, burnin = NULL)
 
 bdgraph.mpl_graph_0.95 <- bayes_graph_select(fit.bdgraph.mpl$p_links, thresh = 0.95, FDR = TRUE)
 
-traceplot(fit.bdgraph.mpl)
+#traceplot(fit.bdgraph.mpl)
+#plotcoda(fit.bdgraph.mpl, verbose = FALSE, thin = iter_multiplier)
 
-plotcoda(fit.bdgraph.mpl, verbose = FALSE, thin = iter_multiplier)
+BDgraph_traceplot(fit.bdgraph.mpl, thin = iter_multiplier, main = "bdgraph.mpl: Trace of graph size")
+
+BDgraph_plotcoda(fit.bdgraph.mpl, verbose = FALSE, thin = iter_multiplier, thin_plot = 100, main = "Cumulative posterior edge probability", ylab = "Posterior edge probability")
 
 
 ```
@@ -583,14 +586,25 @@ plot_usmap(fill = "white", color = "#2b2b2b", alpha = 0.25) +
 ```{r regression.pl_covid, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
 
 timer_regression.pl.start <- Sys.time()
-fit.regression.pl <- regression.pl_GGM(Y=covid1_scaled, iter=(iterations+warmup), burnin = warmup, w_slab=prior_params_covid$w_slab, s_slab=prior_params_covid$s_slab, lambda=prior_params_covid$lambda, Omega_init=Omega_init, store_samples = FALSE)
+fit.regression.pl <- regression.pl_GGM(Y=covid1_scaled, iter=(iterations+warmup), burnin = warmup, w_slab=prior_params_covid$w_slab, s_slab=prior_params_covid$s_slab, lambda=prior_params_covid$lambda, Omega_init=Omega_init, store_samples = FALSE, store_model_samples = TRUE)
 timer_regression.pl.end <- Sys.time()
+
+traceplot.fit.regression.pl <- traceplot.modelSelection.regression.pl(fit.regression.pl, p)
+
+plotcoda.fit.regression.pl <- plotcoda.modelSelection.regression.pl(fit.regression.pl, p)
 
 ```
 
 ```{r regression.pl_covid_diag1, include=TRUE, echo=TRUE, eval=TRUE, cache=TRUE}
 
 regression.pl_graph_0.95 <- bayes_graph_select(fit.regression.pl$p_links, thresh = 0.95, FDR = TRUE)
+
+plot(1:length(traceplot.fit.regression.pl), traceplot.fit.regression.pl, type = "l", col = "blue", xlab = "Iteration", ylab = "Graph size", main = "Trace of graph size")
+
+plot(1:nrow(plotcoda.fit.regression.pl), plotcoda.fit.regression.pl[,1], type = "l", col = "blue", xlab = "Iteration", ylab = "Posterior link probability", ylim = range(plotcoda.fit.regression.pl), main = "Trace of Posterior Probability of Link")
+for(i in 2:100){
+  points(1:nrow(plotcoda.fit.regression.pl), plotcoda.fit.regression.pl[,i], type = "l", col = "blue")
+}
     
 ```
 
