@@ -1,5 +1,5 @@
 ## regression.pl Sampling
-regression.pl_GGM <- function(Y, iter, burnin, w_slab, s_slab, lambda, Omega_init, store_samples = FALSE){
+regression.pl_GGM <- function(Y, iter, burnin, w_slab, s_slab, lambda, Omega_init, store_samples = FALSE, store_model_samples = FALSE){
   
   p <- ncol(Y)
   
@@ -8,7 +8,12 @@ regression.pl_GGM <- function(Y, iter, burnin, w_slab, s_slab, lambda, Omega_ini
   Omega_95_U <- matrix(NA, nrow = p, ncol = p)
   Omega_95_L <- matrix(NA, nrow = p, ncol = p)
   
-  Omega_samples <- array(NA, dim = c(iter, p, p))
+  if(store_samples){
+    Omega_samples <- array(NA, dim = c((iter - burnin), p, p))
+  }
+  if(store_model_samples){
+    Z_samples <- array(NA, dim = c((iter - burnin), p, p))
+  }
   
   for (id_var in 1:p){
     
@@ -21,7 +26,8 @@ regression.pl_GGM <- function(Y, iter, burnin, w_slab, s_slab, lambda, Omega_ini
                                    priorCoef=normalidprior(s_slab^2),
                                    priorModel=modelbinomprior(w_slab),
                                    niter=iter, burnin=burnin, 
-                                   verbose=FALSE, deltaini = (Omega_init[id_var,-id_var] != 0),
+                                   verbose=FALSE, enumerate = FALSE,
+                                   deltaini = (Omega_init[id_var,-id_var] != 0),
                                    initSearch=='none')# modelSelection GGM also only really cares about what is 0
     
     p_links[id_var,id_var] <- 1
@@ -29,17 +35,24 @@ regression.pl_GGM <- function(Y, iter, burnin, w_slab, s_slab, lambda, Omega_ini
     
     atch_samples <- rnlp(msfit = fit.modelSelection_lr, niter=iter, burnin=burnin)
     Omega_hat[id_var, id_var] <- mean(1/atch_samples[,p+1])
-    Omega_hat[id_var, -id_var] <- - colMeans(atch_samples[,2:p] / matrix(atch_samples[,p+1], nrow = iter,ncol = p-1, byrow = FALSE))
+    Omega_hat[id_var, -id_var] <- - colMeans(atch_samples[,2:p] / matrix(atch_samples[,p+1], nrow = (iter - burnin),ncol = p-1, byrow = FALSE))
     
     
     Omega_95_U[id_var, id_var] <- quantile(1/atch_samples[,p+1], probs = 0.975)
-    Omega_95_U[id_var, -id_var] <- apply(-atch_samples[,2:p] / matrix(atch_samples[,p+1], nrow = iter,ncol = p-1, byrow = FALSE), MARGIN = 2, FUN = function(x){quantile(x, probs = 0.975)})
+    Omega_95_U[id_var, -id_var] <- apply(-atch_samples[,2:p] / matrix(atch_samples[,p+1], nrow = (iter - burnin),ncol = p-1, byrow = FALSE), MARGIN = 2, FUN = function(x){quantile(x, probs = 0.975)})
     Omega_95_L[id_var, id_var] <- quantile(1/atch_samples[,p+1], probs = 0.025)
-    Omega_95_L[id_var, -id_var] <- apply(-atch_samples[,2:p] / matrix(atch_samples[,p+1], nrow = iter,ncol = p-1, byrow = FALSE), MARGIN = 2, FUN = function(x){quantile(x, probs = 0.025)})
+    Omega_95_L[id_var, -id_var] <- apply(-atch_samples[,2:p] / matrix(atch_samples[,p+1], nrow = (iter - burnin),ncol = p-1, byrow = FALSE), MARGIN = 2, FUN = function(x){quantile(x, probs = 0.025)})
+    
+    if(store_model_samples){
+      Z_samples[, id_var, id_var] <- 1
+      for(n in 1:(iter - burnin)){
+        Z_samples[n, id_var, -id_var] <- fit.modelSelection_lr$postSample[n,]
+      }
+    } else Z_samples <- NULL
     
     if(store_samples){
       Omega_samples[, id_var, id_var] <- 1/atch_samples[,p+1]
-      for(n in 1:iter){
+      for(n in 1:(iter - burnin)){
         Omega_samples[n, id_var, -id_var] <- -atch_samples[n,2:p]/atch_samples[n,p+1]
       }## difficult to do joint, but if we only care about marginals this is fine
     } else Omega_samples <- NULL
@@ -49,7 +62,7 @@ regression.pl_GGM <- function(Y, iter, burnin, w_slab, s_slab, lambda, Omega_ini
   Omega_hat <- (Omega_hat + t(Omega_hat))/2
   p_links <- (p_links + t(p_links))/2
   
-  return(list("p_links" = p_links, "Omega_hat" = Omega_hat, "Omega_95_L" = Omega_95_L, "Omega_95_U" = Omega_95_U, "Omega_samples" = Omega_samples))
+  return(list("p_links" = p_links, "Omega_hat" = Omega_hat, "Omega_95_L" = Omega_95_L, "Omega_95_U" = Omega_95_U, "Omega_samples" = Omega_samples, "Z_samples" = Omega_samples))
 }
 
 # Posteriro Sampling for bdgraph or bdgraph.mpl
@@ -349,7 +362,8 @@ traceplot.modelSelection.regression.pl <- function(regression.pl.object, p){
   N_MCMC <- dim(regression.pl.object$Omega_samples)[1]
   model_size <- rep(NA, N_MCMC)
   for(n in 1:N_MCMC){
-    model_size[n] <- (sum(regression.pl.object$Omega_samples[n,,] != 0) - p)/2
+    #model_size[n] <- (sum(regression.pl.object$Omega_samples[n,,] != 0) - p)/2
+    model_size[n] <- (sum(regression.pl.object$Z_samples[n,,]) - p)/2
   }
   return(model_size)
 }  
@@ -364,7 +378,122 @@ plotcoda.modelSelection.regression.pl <- function(regression.pl.object, p, seed 
   plot_index1 <- sample(1:p, N_plot, replace = FALSE)
   plot_index2 <- sample(1:p, N_plot, replace = FALSE)
   for(i in 1:N_plot){
-    inclusion_probs[,i] <- cumsum(regression.pl.object$Omega_samples[,plot_index1[i], plot_index2[i]] != 0)/(2*(1:N_MCMC)) + cumsum(regression.pl.object$Omega_samples[,plot_index2[i], plot_index1[i]] != 0)/(2*(1:N_MCMC)) 
+    #inclusion_probs[,i] <- cumsum(regression.pl.object$Omega_samples[,plot_index1[i], plot_index2[i]] != 0)/(2*(1:N_MCMC)) + cumsum(regression.pl.object$Omega_samples[,plot_index2[i], plot_index1[i]] != 0)/(2*(1:N_MCMC)) 
+    inclusion_probs[,i] <- cumsum(regression.pl.object$Z_samples[,plot_index1[i], plot_index2[i]])/(2*(1:N_MCMC)) + cumsum(regression.pl.object$Z_samples[,plot_index2[i], plot_index1[i]])/(2*(1:N_MCMC)) 
   }
   return(inclusion_probs)
+}
+
+BDgraph_traceplot <- function (bdgraph.obj, thin = 1, acf = FALSE, pacf = FALSE, main = NULL, 
+                               ...) 
+{
+  if ((inherits(bdgraph.obj, "bdgraph")) | (inherits(bdgraph.obj, 
+                                                     "ssgraph"))) {
+    if (is.null(bdgraph.obj$all_graphs)) 
+      stop("'bdgraph.obj' must be an object of function 'bdgraph()' or 'ssgraph()' with option 'save = TRUE'")
+    sample_graphs = bdgraph.obj$sample_graphs
+    all_graphs = bdgraph.obj$all_graphs
+    graph_weights = bdgraph.obj$graph_weights
+    sizesample_graphs = sapply(sample_graphs, function(x) length(which(unlist(strsplit(as.character(x), 
+                                                                                       "")) == 1)))
+    sizeall_graphs = sizesample_graphs[all_graphs]
+    which_G_max = which(max(graph_weights) == graph_weights)
+    size_selected_g = sizeall_graphs[which_G_max]
+    sample_mcmc = sizeall_graphs
+    if (is.null(main)) 
+      main = "Trace of graph size"
+    ylab = "Graph size"
+  }
+  else {
+    if (!is.vector(bdgraph.obj)) 
+      stop("'bdgraph.obj' must be an object of functions 'bdgraph()', 'bdgraph.mpl()', or 'ssgraph()' or a vector")
+    sample_mcmc = bdgraph.obj
+    if (is.null(main)) 
+      main = "Trace of MCMC sample"
+    ylab = ""
+  }
+  #if (acf == FALSE & pacf == FALSE) 
+  #  op = graphics::par(mfrow = c(1, 1), pty = "s")
+  #if (acf == TRUE & pacf == TRUE) 
+  #  op = graphics::par(mfrow = c(2, 2), pty = "s")
+  #if (acf == TRUE & pacf == FALSE) 
+  #  op = graphics::par(mfrow = c(1, 2), pty = "s")
+  #if (acf == FALSE & pacf == TRUE) 
+  #  op = graphics::par(mfrow = c(1, 2), pty = "s")
+  x_vec = (1:length(sample_mcmc))[seq(1, length(sample_mcmc), by = thin)]
+  graphics::plot(x = x_vec, y = sample_mcmc[seq(1, length(sample_mcmc), by = thin)], type = "l", main = main, 
+                 col = "black", ylab = ylab, xlab = "Iteration", ...)
+  #if (!is.vector(bdgraph.obj)) 
+  #  graphics::lines(x = x_vec, y = rep(size_selected_g, length(sample_mcmc[seq(1, length(sample_mcmc), by = thin)])), 
+  #                  col = "blue")
+  if (acf == TRUE) 
+    acf(sample_mcmc, main = "ACF for graph size")
+  if (pacf == TRUE) 
+    pacf(sample_mcmc, main = "PACF for graph size")
+  #graphics::par(op)
+}
+
+BDgraph_plotcoda <- function (bdgraph.obj, thin = NULL, thin_plot = 1, control = TRUE, main = NULL, 
+                              verbose = TRUE, ...) 
+{
+  if ((inherits(bdgraph.obj, "bdgraph")) | (inherits(bdgraph.obj, 
+                                                     "ssgraph"))) {
+    if (is.null(bdgraph.obj$all_graphs)) 
+      stop("'bdgraph.obj' must be an object of function 'bdgraph()' or 'ssgraph()' with option 'save = TRUE'")
+    if (is.null(bdgraph.obj$all_graphs)) 
+      stop("'bdgraph.obj' must be an object of function 'bdgraph()' or 'ssgraph()' with option 'save = TRUE'")
+  }
+  else {
+    stop("'bdgraph.obj' must be an object of functions 'bdgraph()', 'bdgraph.mpl()', or 'ssgraph()'")
+  }
+  if (is.null(thin)) 
+    thin = ceiling(length(bdgraph.obj$all_graphs)/1000)
+  if (!is.numeric(thin)) 
+    stop("'thin' must be a number")
+  if (is.matrix(thin)) 
+    stop("'thin' must be a number")
+  sample_graphs = bdgraph.obj$sample_graphs
+  p = nrow(bdgraph.obj$last_graph)
+  qp = p * (p - 1)/2
+  all_weights = bdgraph.obj$all_weights
+  all_graphs = bdgraph.obj$all_graphs
+  allG_new = all_graphs[c(thin * (1:floor(length(all_graphs)/thin)))]
+  all_weights_new = all_weights[c(thin * (1:floor(length(all_weights)/thin)))]
+  length_allG_new = length(allG_new)
+  result = matrix(0, qp, length_allG_new)
+  vec_result = 0 * result[, 1]
+  for (g in 1:length_allG_new) {
+    if (verbose == TRUE) {
+      mes = paste(c("Calculation ... in progress : ", floor(100 * 
+                                                              g/length_allG_new), "%"), collapse = "")
+      cat(mes, "\r")
+      utils::flush.console()
+    }
+    which_edge = which(unlist(strsplit(as.character(sample_graphs[allG_new[g]]), 
+                                       "")) == 1)
+    vec_result[which_edge] = vec_result[which_edge] + all_weights_new[g]
+    result[, g] = vec_result/sum(all_weights_new[c(1:g)])
+  }
+  if (control) 
+    if (p > 15) {
+      #randomLinks = sample(x = 1:qp, size = (qp - 100), 
+      #                     replace = FALSE)
+      #result[randomLinks, ] = 0
+      randomLinks = sample(x = 1:qp, size = 100, 
+                           replace = FALSE)
+      result <- result[randomLinks, ]
+    }
+  if (verbose == TRUE) {
+    mes = paste(c("Calculation ... done.                        "), 
+                collapse = "")
+    cat(mes, "\r")
+    cat("\n")
+    utils::flush.console()
+  }
+  graphics::matplot(x = (thin * (1:length_allG_new)[seq(1, length_allG_new, by = thin_plot)]), y = t(result[,seq(1, length_allG_new, by = thin_plot)]), 
+                    type = "l", lty = 1, col = "black", xlab = "Iteration", 
+                    ylab = "Posterior edge probability")#, cex.lab = 1.3, cex.axis = 1.2)
+  if (is.null(main)) 
+    main = "Trace of the Posterior Probabilities of the Links."
+  graphics::title(main = main)#, cex.main = 1.2)
 }
