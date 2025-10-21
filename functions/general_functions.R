@@ -33,7 +33,7 @@ regression.pl_GGM <- function(Y, iter, burnin, w_slab, s_slab, lambda, Omega_ini
     p_links[id_var,id_var] <- 1
     p_links[id_var, -id_var] <- fit.modelSelection_lr$margpp
     
-    atch_samples <- rnlp(msfit = fit.modelSelection_lr, niter=iter, burnin=burnin)
+    atch_samples <- rnlp(msfit = fit.modelSelection_lr, niter=(iter - burnin), burnin=0)
     Omega_hat[id_var, id_var] <- mean(1/atch_samples[,p+1])
     Omega_hat[id_var, -id_var] <- - colMeans(atch_samples[,2:p] / matrix(atch_samples[,p+1], nrow = (iter - burnin),ncol = p-1, byrow = FALSE))
     
@@ -62,7 +62,7 @@ regression.pl_GGM <- function(Y, iter, burnin, w_slab, s_slab, lambda, Omega_ini
   Omega_hat <- (Omega_hat + t(Omega_hat))/2
   p_links <- (p_links + t(p_links))/2
   
-  return(list("p_links" = p_links, "Omega_hat" = Omega_hat, "Omega_95_L" = Omega_95_L, "Omega_95_U" = Omega_95_U, "Omega_samples" = Omega_samples, "Z_samples" = Omega_samples))
+  return(list("p_links" = p_links, "Omega_hat" = Omega_hat, "Omega_95_L" = Omega_95_L, "Omega_95_U" = Omega_95_U, "Omega_samples" = Omega_samples, "Z_samples" = Z_samples))
 }
 
 # Posteriro Sampling for bdgraph or bdgraph.mpl
@@ -359,7 +359,7 @@ regression_R2_eval <- function(y_test, Omega_hat){
 }
 
 traceplot.modelSelection.regression.pl <- function(regression.pl.object, p){
-  N_MCMC <- dim(regression.pl.object$Omega_samples)[1]
+  N_MCMC <- dim(regression.pl.object$Z_samples)[1]
   model_size <- rep(NA, N_MCMC)
   for(n in 1:N_MCMC){
     #model_size[n] <- (sum(regression.pl.object$Omega_samples[n,,] != 0) - p)/2
@@ -369,14 +369,14 @@ traceplot.modelSelection.regression.pl <- function(regression.pl.object, p){
 }  
 
 plotcoda.modelSelection.regression.pl <- function(regression.pl.object, p, seed = 1, N_plot=NULL){
-  N_MCMC <- dim(regression.pl.object$Omega_samples)[1]
+  N_MCMC <- dim(regression.pl.object$Z_samples)[1]
   if(is.null(N_plot)){
     N_plot <- min(100, (p*(p+1)/2))
   }
   inclusion_probs <- matrix(NA, nrow = N_MCMC, ncol = N_plot)
   set.seed(seed)
-  plot_index1 <- sample(1:p, N_plot, replace = FALSE)
-  plot_index2 <- sample(1:p, N_plot, replace = FALSE)
+  plot_index1 <- sample(1:p, N_plot, replace = TRUE)
+  plot_index2 <- sample(1:p, N_plot, replace = TRUE)
   for(i in 1:N_plot){
     #inclusion_probs[,i] <- cumsum(regression.pl.object$Omega_samples[,plot_index1[i], plot_index2[i]] != 0)/(2*(1:N_MCMC)) + cumsum(regression.pl.object$Omega_samples[,plot_index2[i], plot_index1[i]] != 0)/(2*(1:N_MCMC)) 
     inclusion_probs[,i] <- cumsum(regression.pl.object$Z_samples[,plot_index1[i], plot_index2[i]])/(2*(1:N_MCMC)) + cumsum(regression.pl.object$Z_samples[,plot_index2[i], plot_index1[i]])/(2*(1:N_MCMC)) 
